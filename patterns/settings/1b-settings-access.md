@@ -24,19 +24,19 @@ Not when:
 
 ### 1. Module singleton
 ```python
-# app/config/settings.py (fragment)
+# app/core/config/settings.py (fragment)
 settings = Settings()
 ```
 Simplest and usable anywhere, but built at import: anything importing it needs a valid environment, and tests must set env vars before import. For scripts and tiny apps.
 
 ### 2. Cached function + `Depends` (default, used by the example)
 ```python
-# app/dependencies/settings.py
+# app/core/dependencies/settings.py
 from typing import Annotated
 
 from fastapi import Depends
 
-from app.config.settings import Settings, get_settings
+from app.core.config.settings import Settings, get_settings
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 ```
@@ -52,30 +52,35 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config.log import configure_logging
-from app.config.settings import get_settings
-from app.db.engine import build_engine
-from app.dependencies.settings import SettingsDep
+from app.core.config.log import configure_logging
+from app.core.config.settings import get_settings
+from app.core.db.engine import build_engine
+from app.core.dependencies.settings import SettingsDep
+from app.core.events.bus import EventBus
+from app.core.exceptions import handlers as error_handlers
+from app.services.orders import event_handlers as orders_handlers
+from app.services.orders.api.router import router as orders_router
+from app.services.users.api.router import router as users_router
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    # Runs once per process at startup, not per request
     settings = get_settings()
     app.state.engine = build_engine(settings.db, application_name=settings.app.name)
+    app.state.bus = EventBus(app.state.engine)
+    orders_handlers.register(app.state.bus)
     yield
-    app.state.engine.dispose()        # on shutdown
+    app.state.engine.dispose()
 
 
 def create_app() -> FastAPI:
-    settings = get_settings()         # validates now: bad config fails startup, not the first request
+    settings = get_settings()
     configure_logging(settings.log)
-    logger.info("settings loaded: %s", settings.model_dump_json())   # SecretStr values print as **********
+    logger.info("settings loaded: %s", settings.model_dump_json())
 
     app = FastAPI(title=settings.app.name, debug=settings.app.debug, lifespan=lifespan)
-    # CORS is set here only: a gateway's CORS config would override these headers
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors.allow_origins,
@@ -84,14 +89,18 @@ def create_app() -> FastAPI:
         allow_credentials=settings.cors.allow_credentials,
     )
 
-    @app.get("/healthz")              # readiness probe: no DB query
+    error_handlers.register(app)
+    app.include_router(users_router)
+    app.include_router(orders_router)
+
+    @app.get("/healthz")
     def healthz(settings: SettingsDep) -> dict[str, str]:
         return {"status": "ok", "app": settings.app.name}
 
     return app
 
 
-app = create_app()                    # module import builds and validates settings
+app = create_app()
 ```
 
 Non-request code (lifespan, scripts, tasks) calls `get_settings()` directly. Tests set env vars and call `get_settings.cache_clear()` ([[1c-settings-testing]]).
@@ -100,7 +109,7 @@ Non-request code (lifespan, scripts, tasks) calls `get_settings()` directly. Tes
 ```python
 # main.py (fragment)
 def create_app(settings: Settings | None = None) -> FastAPI:
-    if settings is None:                # not `settings or ...`: never rely on a model's truthiness
+    if settings is None:
         settings = Settings()
     app = FastAPI(title=settings.app.name, debug=settings.app.debug)
     app.state.settings = settings
@@ -125,7 +134,7 @@ Most explicit: tests call `create_app(Settings(...))`. Code outside requests nee
 ## Rules
 - **Validate at import.** `app = create_app()` at module level builds settings before uvicorn listens.
 - **Startup objects in the lifespan.** The engine is built on startup and disposed on shutdown; nothing reads settings per request to rebuild it.
-- **`config/` creates, `dependencies/` hands out** ([[1b-layout-core]]).
+- **`core/config/` creates, `core/dependencies/` hands out** ([[1b-layout-core]]).
 - **Keep the readiness route trivial.** `/healthz` returns a constant; a DB query there would fail every new instance on a database blip.
 
 ## Anti-patterns

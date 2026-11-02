@@ -19,7 +19,7 @@ App-wide values (name, production toggle, debug) get their own `AppSettings` sub
 
 ## Pattern
 ```python
-# app/config/app.py
+# app/core/config/app.py
 from pydantic import BaseModel, ConfigDict
 
 

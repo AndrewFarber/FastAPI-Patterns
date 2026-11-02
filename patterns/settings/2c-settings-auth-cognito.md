@@ -23,34 +23,24 @@ Not when:
 
 ## Pattern
 ```python
-# app/config/auth.py
+# app/core/config/auth.py
 from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class AuthSettings(BaseModel):
-    """Values needed to verify JWTs from an external identity provider. No secrets."""
-
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    # Exact "iss" claim. Plain str, not HttpUrl: the match is exact, and HttpUrl
-    # would add or keep a trailing slash that the provider may not use.
     issuer: str
-    # Where the provider publishes its public signing keys. Defaults to the
-    # common {issuer}/.well-known/jwks.json; some providers use another path.
     jwks_url: str | None = None
 
-    # Who the token must be issued for: API identifiers or app client IDs
     audiences: list[str] = Field(min_length=1)
-    # The claim that holds the audience. "aud" for most providers.
     audience_claim: str = "aud"
-    # Extra claims that must match exactly, e.g. {"token_use": "access"}
     required_claims: dict[str, str] = {}
 
-    # Asymmetric algorithms only: never "none" or HS256 for provider-issued tokens
     algorithms: list[Literal["RS256", "RS384", "RS512", "ES256", "ES384", "PS256"]] = ["RS256"]
-    leeway_seconds: int = Field(default=30, ge=0, le=300)   # clock skew allowed on exp/nbf
+    leeway_seconds: int = Field(default=30, ge=0, le=300)
     jwks_cache_ttl_seconds: int = Field(default=3600, gt=0)
 
     @model_validator(mode="after")
@@ -72,7 +62,7 @@ AUTH__AUDIENCE_CLAIM=client_id
 AUTH__REQUIRED_CLAIMS='{"token_use": "access"}'
 ```
 
-Verification itself lives in `security/` (pure helpers) and is handed to routes by `dependencies/` ([[1b-layout-core]]).
+Verification itself lives in `core/auth/` and is handed to routes by `core/dependencies/` ([[1b-layout-core]]).
 
 ## Rules
 - **No secrets.** Cognito signs with its private keys; every field is public.

@@ -1,0 +1,9 @@
+from typing import Protocol
+
+from app.services.users.domain.entities import User
+
+
+class UserRepository(Protocol):
+    def get(self, user_id: int) -> User | None: ...
+    def add(self, user: User) -> User: ...
+    def save(self, user: User) -> None: ...

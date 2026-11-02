@@ -9,7 +9,7 @@ Match the vault's patterns against the work at hand, propose the ones that fit, 
 
 ## 1. Understand the work
 - **The feature:** what the user is building or changing, in a sentence.
-- **The codebase:** look before reading notes. `pyproject.toml` (dependencies), the `app/` layout, `config/`, `main.py`, `tests/conftest.py`, deployment files. Note what already exists, so you don't propose a pattern that's already applied.
+- **The codebase:** look before reading notes. `pyproject.toml` (dependencies), the `app/` layout (`core/`, `shared/`, `services/`), `core/config/`, `main.py`, `tests/conftest.py`, deployment files. Note what already exists, so you don't propose a pattern that's already applied.
 
 ## 2. Find candidate patterns
 1. Read `INDEX.md`, then the guide of each topic that could matter (`0-<topic>-guide.md`, or the topic's single note). Each guide line names a pattern in one line.
@@ -36,7 +36,7 @@ Then ask which to implement with AskUserQuestion (`multiSelect: true`, at most f
 When a chosen note offers options (e.g. three ways to access settings), settle them in the same round: answer what the codebase already decides, ask only the rest, and use the note's recommended option when the user doesn't care.
 
 ## 5. Implement
-- Follow the note's **Pattern** code and **Rules**, and avoid its **Anti-patterns**. A code block whose first line is a full path (`# app/config/db.py`) is a tested file in `examples/<topic>/`; read the full file there when the block isn't enough. Blocks marked `(fragment)` show part of a file.
+- Follow the note's **Pattern** code and **Rules**, and avoid its **Anti-patterns**. A code block whose first line is a full path (`# app/core/config/db.py`) is a tested file under `examples/`; read the full file there when the block isn't enough. Blocks marked `(fragment)` show part of a file.
 - Adapt names to the codebase (`orders-api`, module paths), not the other way round.
 - Change only what the chosen patterns need; leave unrelated code as it is.
 - Finish with one short list: which patterns were applied, where, and any codebase fits not yet taken.

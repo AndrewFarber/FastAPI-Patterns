@@ -2,8 +2,7 @@
 
 A note's code block is synced when its first line is exactly "# <path>",
 where <path> ends in .py (a python block) or is Dockerfile (a dockerfile block),
-and examples/<topic>/<path> is a file. <topic> is the note's folder
-(patterns/settings/... -> examples/settings/...).
+and examples/<path> is a file. Every topic's notes show the same example app.
 
 A block that shows only part of a file says so on its first line,
 "# main.py (fragment)", and is left alone. A bare "# <path>" that doesn't
@@ -29,10 +28,8 @@ BLOCK = re.compile(
 
 
 def synced(note: Path, missing: list[str]) -> str:
-    topic = EXAMPLES / note.parent.name
-
     def replace(match: re.Match[str]) -> str:
-        source = topic / match["path"]
+        source = EXAMPLES / match["path"]
         if not source.is_file():
             missing.append(f"{note.relative_to(PATTERNS.parent)}: # {match['path']} (label fragments as '(fragment)')")
             return match[0]

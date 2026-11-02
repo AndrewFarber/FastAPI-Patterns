@@ -49,6 +49,7 @@ app/
 │   ├── security/
 │   ├── observability/
 │   ├── http/
+│   ├── aws/
 │   ├── blob/
 │   └── notifications/
 ├── shared/
@@ -73,6 +74,7 @@ app/
 | `security/`      | Hashing, encryption, signing.                                          |
 | `observability/` | Logging, metrics, tracing.                                             |
 | `http/`          | Outbound HTTP client: timeouts, retries, header propagation.           |
+| `aws/`           | AWS clients with short timeouts for values read on the request path.  |
 | `blob/`          | File and object storage.                                               |
 | `notifications/` | Email, SMS, and push behind one interface.                             |
 

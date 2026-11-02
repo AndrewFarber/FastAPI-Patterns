@@ -11,7 +11,7 @@ related: ["[[1a-settings-management]]"]
 General notes come first; indented notes build on the note above them. [[1a-settings-management]] is the base for all of them.
 
 ## 1. Core
-- [[1a-settings-management]]: one `config/` package, a frozen sub-model per concern, a root `Settings` that only composes.
+- [[1a-settings-management]]: one `core/config/` package, a frozen sub-model per concern, a root `Settings` that only composes.
 - [[1b-settings-access]]: creating and reading settings: singleton, cached function + `Depends` (default), or app factory; built at startup.
 - [[1c-settings-testing]]: fixtures that build settings from one dict and clear the developer's env vars.
 

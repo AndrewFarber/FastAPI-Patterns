@@ -8,7 +8,7 @@ related: ["[[4a-settings-refreshing-values]]", "[[2b-settings-db-rotated-passwor
 
 # Caching live values from AWS
 
-Settings hold only *where* and *how often* to fetch; a `TtlCache` client in `clients/` fetches the live value. One fetch per expired key, the old value while it refreshes, and the last good value with a backoff when the source is down.
+Settings hold only *where* and *how often* to fetch; a `TtlCache` (`core/cache/`) around an AWS client (`core/aws/`) fetches the live value. One fetch per expired key, the old value while it refreshes, and the last good value with a backoff when the source is down.
 
 ## Fits when
 - Individual secrets or parameters change while the app runs and are read per request or per connection.
@@ -22,7 +22,7 @@ Not when:
 
 ## Pattern
 ```python
-# app/clients/ttl_cache.py
+# app/core/cache/ttl_cache.py
 import logging
 import threading
 import time
@@ -32,8 +32,6 @@ logger = logging.getLogger(__name__)
 
 
 class TtlCache:
-    """Per-key cache: one fetch per expired key; the last good value while refreshing or when a fetch fails."""
-
     def __init__(self, fetch: Callable[[str], str], ttl_seconds: float, retry_seconds: float = 30) -> None:
         self._fetch = fetch
         self._ttl = ttl_seconds
@@ -48,11 +46,11 @@ class TtlCache:
             return cached[1]
         lock = self._lock_for(key)
         if cached is None:
-            lock.acquire()                            # no value yet: wait for the fetch
+            lock.acquire()
         elif not lock.acquire(blocking=False):
-            return cached[1]                          # another thread is refreshing: serve the old value
+            return cached[1]
         try:
-            cached = self._values.get(key)            # another thread may have refreshed it
+            cached = self._values.get(key)
             if cached and cached[0] > time.monotonic():
                 return cached[1]
             try:
@@ -60,7 +58,6 @@ class TtlCache:
             except Exception:
                 if cached is None:
                     raise
-                # Back off: the next fetch waits retry_seconds instead of running on every call
                 self._values[key] = (time.monotonic() + self._retry, cached[1])
                 logger.warning("refresh of %s failed; serving the last good value", key, exc_info=True)
                 return cached[1]
@@ -70,7 +67,6 @@ class TtlCache:
             lock.release()
 
     def invalidate(self, key: str) -> None:
-        """Fetch on the next get(), keeping the current value as the fallback."""
         cached = self._values.get(key)
         if cached:
             self._values[key] = (0.0, cached[1])
@@ -81,14 +77,12 @@ class TtlCache:
 ```
 
 ```python
-# app/clients/aws_values.py
+# app/core/aws/values.py
 import boto3
 from botocore.config import Config
 
-from app.clients.ttl_cache import TtlCache
+from app.core.cache.ttl_cache import TtlCache
 
-# Fetched on the request path (per DB connection): fail fast and let TtlCache serve the
-# last good value, instead of botocore's 60 s timeouts and legacy retries
 CLIENT_CONFIG = Config(connect_timeout=1, read_timeout=2, retries={"mode": "standard", "max_attempts": 2})
 
 

@@ -35,7 +35,12 @@ Not when:
 The base type and the publisher `Protocol` live in `shared/events/`, so a service's domain can use them:
 
 ```python
-# app/shared/events/base.py (fragment)
+# app/shared/events/base.py
+from dataclasses import dataclass, field
+from typing import Protocol
+from uuid import UUID, uuid4
+
+
 @dataclass(frozen=True, kw_only=True)
 class DomainEvent:
     event_id: UUID = field(default_factory=uuid4)
@@ -48,36 +53,136 @@ class EventPublisher(Protocol):
 The publisher defines the event in its domain and re-exports it from `__init__.py`:
 
 ```python
-# app/services/users/domain/events.py (fragment)
+# app/services/users/domain/events.py
+from dataclasses import dataclass
+
+from app.shared.events.base import DomainEvent
+
+
 @dataclass(frozen=True, kw_only=True)
 class UserDeactivated(DomainEvent):
     user_id: int
 ```
 
 ```python
-# app/services/users/__init__.py (fragment)
+# app/services/users/__init__.py
 from app.services.users.domain.events import UserDeactivated
 from app.services.users.public import UsersApi
 
 __all__ = ["UserDeactivated", "UsersApi"]
 ```
 
-The use case publishes after changing state. `publish` only records the event; `core/events/` dispatches it after the transaction commits:
+The use case publishes after changing state, through the `EventPublisher` it is given:
 
 ```python
-# app/services/users/use_cases/deactivate_user.py (fragment)
+# app/services/users/use_cases/deactivate_user.py
+from dataclasses import dataclass
+
+from app.services.users.domain.errors import UserNotFound
+from app.services.users.domain.events import UserDeactivated
+from app.services.users.domain.protocols import UserRepository
+from app.shared.events.base import EventPublisher
+
+
+@dataclass(frozen=True)
+class DeactivateUser:
+    user_id: int
+
+
 def deactivate_user(command: DeactivateUser, users: UserRepository, events: EventPublisher) -> None:
     user = users.get(command.user_id)
+    if user is None:
+        raise UserNotFound(command.user_id)
     user.deactivate()
     users.save(user)
-    events.publish(UserDeactivated(user_id=user.id))
+    events.publish(UserDeactivated(user_id=command.user_id))
 ```
 
-The subscriber's `event_handlers/` is an entry point like `api/`: it builds the implementations and calls a use case. Each handler gets its own session:
+`publish` only records the event. The unit of work commits, and only then hands the recorded events to the bus; a rollback or a failed commit drops them:
 
 ```python
-# app/services/orders/event_handlers/user_deactivated.py (fragment)
+# app/core/db/unit_of_work.py
+from types import TracebackType
+from typing import Self
+
+from sqlalchemy import Engine
+from sqlalchemy.orm import Session
+
+from app.core.events.bus import EventBus, RecordingPublisher
+
+
+class UnitOfWork:
+    def __init__(self, engine: Engine, bus: EventBus) -> None:
+        self._engine = engine
+        self._bus = bus
+
+    def __enter__(self) -> Self:
+        self.session = Session(self._engine)
+        self.events = RecordingPublisher()
+        return self
+
+    def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> None:
+        with self.session:
+            if exc_type is not None:
+                self.session.rollback()
+                return
+            self.session.commit()
+        self._bus.dispatch(self.events.events)
+```
+
+The bus runs each handler in its own transaction and logs a failure instead of raising it, since the publisher's change is already committed:
+
+```python
+# app/core/events/bus.py
+import logging
+from collections import defaultdict
+from collections.abc import Callable
+
+from sqlalchemy import Engine
+from sqlalchemy.orm import Session
+
+from app.shared.events.base import DomainEvent
+
+logger = logging.getLogger(__name__)
+
+type Handler[E: DomainEvent] = Callable[[E, Session], None]
+
+
+class EventBus:
+    def __init__(self, engine: Engine) -> None:
+        self._engine = engine
+        self._handlers: dict[type[DomainEvent], list[Handler]] = defaultdict(list)
+
+    def subscribe[E: DomainEvent](self, event_type: type[E], handler: Handler[E]) -> None:
+        self._handlers[event_type].append(handler)
+
+    def dispatch(self, events: list[DomainEvent]) -> None:
+        for event in events:
+            for handler in self._handlers[type(event)]:
+                try:
+                    with Session(self._engine) as session, session.begin():
+                        handler(event, session)
+                except Exception:
+                    logger.exception("%s failed for %r", handler.__qualname__, event)
+
+
+class RecordingPublisher:
+    def __init__(self) -> None:
+        self.events: list[DomainEvent] = []
+
+    def publish(self, event: DomainEvent) -> None:
+        self.events.append(event)
+```
+
+The subscriber's `event_handlers/` is an entry point like `api/`: it builds the implementations and calls a use case of its own service:
+
+```python
+# app/services/orders/event_handlers/user_deactivated.py
+from sqlalchemy.orm import Session
+
 from app.services import users
+from app.services.orders.infrastructure.repositories import SqlOrderRepository
+from app.services.orders.use_cases.cancel_open_orders import CancelOpenOrders, cancel_open_orders
 
 
 def on_user_deactivated(event: users.UserDeactivated, session: Session) -> None:
@@ -85,12 +190,17 @@ def on_user_deactivated(event: users.UserDeactivated, session: Session) -> None:
 ```
 
 ```python
-# app/services/orders/event_handlers/__init__.py (fragment)
+# app/services/orders/event_handlers/__init__.py
+from app.core.events.bus import EventBus
+from app.services import users
+from app.services.orders.event_handlers.user_deactivated import on_user_deactivated
+
+
 def register(bus: EventBus) -> None:
     bus.subscribe(users.UserDeactivated, on_user_deactivated)
 ```
 
-`main.py` calls each service's `register(bus)` at startup. Users never imports orders; adding another subscriber changes nothing in users.
+`main.py` builds the bus at startup and calls each service's `register(bus)`. Users never imports orders; adding another subscriber changes nothing in users.
 
 ## Rules
 - **The publisher owns the event:** it lives in the publisher's `domain/events.py`, and subscribers import it only from the publisher's `__init__.py`.

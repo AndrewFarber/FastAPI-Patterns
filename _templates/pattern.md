@@ -18,7 +18,7 @@ Not when:
 
 ## Signals
 - **Feature:** what a request or task says that calls for this pattern.
-- **Code:** greppable shapes in an existing codebase that this pattern would replace (`os.getenv(` outside `config/`).
+- **Code:** greppable shapes in an existing codebase that this pattern would replace (`os.getenv(` outside `core/config/`).
 
 ## Pattern
 ```python

@@ -28,10 +28,15 @@ from typing import Any
 
 import pytest
 from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from sqlalchemy import Engine, create_engine
+from sqlalchemy.pool import StaticPool
 
-from app.config.settings import Settings, get_settings
+from app.core.config.settings import Settings, get_settings
+from app.core.db.base import Base
+from app.services.orders.infrastructure.models import OrderRow
+from app.services.users.infrastructure.models import UserRow
 
-# One source of truth for test configuration
 TEST_VALUES: dict[str, dict[str, Any]] = {
     "db": {
         "host": "localhost", "user": "test", "name": "orders_test", "sslmode": "disable",
@@ -41,12 +46,11 @@ TEST_VALUES: dict[str, dict[str, Any]] = {
 }
 
 
-def make_test_settings() -> Settings:   # not test_*: pytest would collect it as a test
+def make_test_settings() -> Settings:
     return Settings(**TEST_VALUES)
 
 
 def make_test_env() -> dict[str, str]:
-    """TEST_VALUES as env vars: DB__HOST=localhost, lists and dicts as JSON."""
     return {
         f"{section}__{key}".upper(): json.dumps(value) if isinstance(value, (list, dict)) else str(value)
         for section, fields in TEST_VALUES.items()
@@ -55,11 +59,10 @@ def make_test_env() -> dict[str, str]:
 
 
 def clear_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Drop the developer's own APP__*, DB__*, ... so APP__IS_PRD=true in a shell can't change a test."""
     sections = {name.upper() for name in Settings.model_fields}
-    source_switches = {"AWS_SECRETS_MANAGER_SECRET_ID", "AWS_SSM_PATH"}   # turn on optional sources
+    source_switches = {"AWS_SECRETS_MANAGER_SECRET_ID", "AWS_SSM_PATH"}
     for key in list(os.environ):
-        upper = key.upper()                          # env var names are matched case-insensitively
+        upper = key.upper()
         if upper.split("__")[0] in sections or upper in source_switches:
             monkeypatch.delenv(key)
 
@@ -69,38 +72,53 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     clear_settings_env(monkeypatch)
 
 
-# Set the environment, not dependency_overrides.
-# Overrides only reach request-time Depends(); startup code that calls
-# get_settings() directly would still read the real environment.
 @pytest.fixture
 def test_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     for key, value in make_test_env().items():
         monkeypatch.setenv(key, value)
-    get_settings.cache_clear()          # rebuild from the test environment
+    get_settings.cache_clear()
     yield
-    get_settings.cache_clear()          # don't leak test settings into other tests
+    get_settings.cache_clear()
 
 
 @pytest.fixture
 def create_app(test_env) -> Iterator[Callable[[], FastAPI]]:
-    """app.main.create_app, imported after test_env: importing app.main builds its module-level app."""
     root = logging.getLogger()
     handlers, level = root.handlers[:], root.level
     from app.main import create_app
     yield create_app
-    root.handlers[:] = handlers         # create_app() configured the root logger
+    root.handlers[:] = handlers
     root.setLevel(level)
 
 
 @pytest.fixture(autouse=True)
 def aws_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Fake credentials for moto and for signing IAM tokens offline, in every test:
-    a test can't reach real AWS with the developer's profile or keys."""
     for key in ("AWS_PROFILE", "AWS_SESSION_TOKEN", "AWS_SECURITY_TOKEN"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+
+
+@pytest.fixture
+def engine() -> Iterator[Engine]:
+    tables = [UserRow.__table__, OrderRow.__table__]
+    schemas = {table.schema: None for table in tables}
+    engine = create_engine(
+        "sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
+    ).execution_options(schema_translate_map=schemas)
+    Base.metadata.create_all(engine, tables=tables)
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture
+def client(create_app, engine, monkeypatch) -> Iterator[TestClient]:
+    from app import main
+
+    monkeypatch.setattr(main, "build_engine", lambda db, application_name: engine)
+    with TestClient(create_app()) as client:
+        yield client
 ```
 
 - **`TEST_VALUES`** is the one source of test configuration; `make_test_settings()` builds a `Settings` from it, `make_test_env()` turns it into env vars.
@@ -112,7 +130,7 @@ def aws_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
 - **Set the environment, not overrides,** so startup code that calls `get_settings()` directly sees test values.
 - **`cache_clear()` before and after** each test that changes the environment.
 - **Pass every value a test depends on;** fields not passed fall back to the (cleaned) environment.
-- **Per access approach:** approach 3 needs none of this (`create_app(make_test_settings())`); approach 1 sets env vars before `app.config.settings` is first imported.
+- **Per access approach:** approach 3 needs none of this (`create_app(make_test_settings())`); approach 1 sets env vars before `app.core.config.settings` is first imported.
 - **AWS stays offline:** `aws_credentials` (autouse) drops the developer's `AWS_PROFILE` and sets fake keys in every test; AWS wiring is tested with `moto` ([[3b-settings-aws-sources]]).
 
 ## Anti-patterns

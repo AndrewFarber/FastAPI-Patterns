@@ -19,36 +19,33 @@ Not when:
 
 ## Signals
 - **Feature:** "no DB password", "IAM auth", "connect with the app's role".
-- **Code:** `generate_db_auth_token(` called once at startup or stored in settings; a token passed in `DATABASE_URL`; `boto3` imported in `config/`.
+- **Code:** `generate_db_auth_token(` called once at startup or stored in settings; a token passed in `DATABASE_URL`; `boto3` imported in `core/config/`.
 
 ## Pattern
 ```python
-# app/config/db_iam.py
+# app/core/config/db_iam.py
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
 
 class IamAuth(BaseModel):
-    """AWS IAM database authentication: a fresh token per connection, no password."""
-
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     method: Literal["iam"]
-    region: str                                     # region of the RDS instance
+    region: str
 ```
 
 ```python
-# app/db/iam_auth.py
+# app/core/db/iam_auth.py
 import boto3
 from sqlalchemy import Engine, event
 
-from app.config.db import DbSettings
-from app.config.db_iam import IamAuth
+from app.core.config.db import DbSettings
+from app.core.config.db_iam import IamAuth
 
 
 def add_iam_token(engine: Engine, db: DbSettings) -> None:
-    """Use a fresh IAM auth token as the password for each new connection."""
     assert isinstance(db.auth, IamAuth)
     if db.sslmode == "disable":
         raise ValueError("IAM database authentication requires TLS")
@@ -56,8 +53,6 @@ def add_iam_token(engine: Engine, db: DbSettings) -> None:
 
     @event.listens_for(engine, "do_connect")
     def provide_token(dialect, conn_rec, cargs, cparams):
-        # Signed locally with the app's AWS credentials: no network call.
-        # boto3 refreshes role credentials itself, so the client can be reused.
         cparams["password"] = rds.generate_db_auth_token(
             DBHostname=db.host, Port=db.port, DBUsername=db.user, Region=db.auth.region
         )
@@ -67,7 +62,7 @@ def add_iam_token(engine: Engine, db: DbSettings) -> None:
 
 ## Rules
 - **Token per connection, in `do_connect`.** It only authenticates; open sessions outlive it.
-- **The auth model holds no secret,** only the method and region; the hook lives in `db/`, the model in `config/`.
+- **The auth model holds no secret,** only the method and region; the hook lives in `core/db/`, the model in `core/config/`.
 - **TLS required:** the hook refuses `sslmode=disable`.
 - **AWS side:** a dedicated DB user with `GRANT rds_iam`, and `rds-db:connect` on that user for the app's role.
 

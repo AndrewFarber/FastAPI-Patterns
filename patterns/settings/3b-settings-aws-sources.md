@@ -28,7 +28,7 @@ uv add "pydantic-settings[aws-secrets-manager,aws-systems-manager]"
 ```
 
 ```python
-# app/config/settings.py (fragment)
+# app/core/config/settings.py (fragment)
 import os
 
 from pydantic_settings import (
@@ -40,7 +40,7 @@ from pydantic_settings import (
 
 
 class Settings(BaseSettings):
-    # model_config and fields as in 1a-settings-management
+    ...
 
     @classmethod
     def settings_customise_sources(
@@ -51,10 +51,8 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        # First source wins: env vars still override AWS, so a single value can be patched in a deploy
         sources = [init_settings, env_settings]
 
-        # Only when configured: local runs and tests need no AWS access
         if secret_id := os.environ.get("AWS_SECRETS_MANAGER_SECRET_ID"):
             sources.append(AWSSecretsManagerSettingsSource(settings_cls, secret_id))
         if ssm_path := os.environ.get("AWS_SSM_PATH"):

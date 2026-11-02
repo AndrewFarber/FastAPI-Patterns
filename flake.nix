@@ -35,12 +35,10 @@
       });
 
       apps = forAllSystems (pkgs: {
-        # nix run .#test: run every topic's tests (settings, ...)
+        # nix run .#test: run the example app's tests
         test = app pkgs "test" ''
           cd "$EXAMPLES_DIR"
-          for topic in */; do
-            if [ -d "$topic/tests" ]; then (cd "$topic" && uv run pytest "$@"); fi
-          done
+          uv run pytest "$@"
         '';
         # nix run .#sync: copy example code into the notes
         sync = app pkgs "sync" ''

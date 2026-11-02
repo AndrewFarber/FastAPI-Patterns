@@ -18,7 +18,7 @@ Not when:
 
 ## Signals
 - **Feature:** a new env var, a new external service to configure, "make X configurable".
-- **Code:** `os.getenv(` or `os.environ[` outside `config/`; a flat `Settings` with `db_host`, `db_password: str`; nested models extending `BaseSettings`; `smtp_enabled: bool` next to the fields it switches; per-environment subclasses (`ProdSettings`); `password: str` instead of `SecretStr`.
+- **Code:** `os.getenv(` or `os.environ[` outside `core/config/`; a flat `Settings` with `db_host`, `db_password: str`; nested models extending `BaseSettings`; `smtp_enabled: bool` next to the fields it switches; per-environment subclasses (`ProdSettings`); `password: str` instead of `SecretStr`.
 
 ## Pattern
 ```
@@ -37,7 +37,7 @@ config/
 Every sub-model looks like `LogSettings`: a plain `BaseModel`, frozen, rejecting unknown fields, with pydantic types doing the validation. A concern's setup function (`configure_logging()`) lives next to its model.
 
 ```python
-# app/config/log.py
+# app/core/config/log.py
 import logging
 import sys
 from typing import Literal
@@ -52,46 +52,42 @@ class LogSettings(BaseModel):
 
 
 def configure_logging(log: LogSettings) -> None:
-    """Send every logger's records to stdout at the configured level."""
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
-    logging.basicConfig(level=log.level, handlers=[handler], force=True)   # force: replace earlier handlers
+    logging.basicConfig(level=log.level, handlers=[handler], force=True)
 ```
 
 ```python
-# app/config/settings.py
+# app/core/config/settings.py
 from functools import lru_cache
 from typing import Self
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.config.app import AppSettings
-from app.config.auth import AuthSettings
-from app.config.cors import CorsSettings
-from app.config.db import DbSettings
-from app.config.features import FeatureSettings
-from app.config.log import LogSettings
+from app.core.config.app import AppSettings
+from app.core.config.auth import AuthSettings
+from app.core.config.cors import CorsSettings
+from app.core.config.db import DbSettings
+from app.core.config.features import FeatureSettings
+from app.core.config.log import LogSettings
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_nested_delimiter="__",   # DB__HOST -> settings.db.host
-        extra="forbid",              # typos like DB__POOL_SZIE fail at startup
+        env_nested_delimiter="__",
+        extra="forbid",
         frozen=True,
     )
 
-    # Required concerns (no default, so startup fails if missing)
     db: DbSettings
     auth: AuthSettings
 
-    # Concerns with safe defaults
     app: AppSettings = Field(default_factory=AppSettings)
     cors: CorsSettings = Field(default_factory=CorsSettings)
     log: LogSettings = Field(default_factory=LogSettings)
     features: FeatureSettings = Field(default_factory=FeatureSettings)
 
-    # Cross-concern rules live on the root class
     @model_validator(mode="after")
     def check_prod_safety(self) -> Self:
         if self.app.is_prd:
@@ -104,7 +100,6 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    """Built once per process. create_app() calls it at import."""
     return Settings()
 ```
 
@@ -130,7 +125,7 @@ CORS__ALLOW_ORIGINS='["http://localhost:3000"]'
 - **One class for every environment.** Environments differ only by the values they set.
 
 ## Anti-patterns
-- **`os.environ` outside `config/`.** Values read there skip validation and fail only when the code path runs.
+- **`os.environ` outside `core/config/`.** Values read there skip validation and fail only when the code path runs.
 - **Plain `str` for secrets.** Only `SecretStr` is masked in logs, reprs, and tracebacks.
 - **A default for a required value.** A default host hides a missing env var until the app connects to the wrong place.
 - **Trailing comments in env files.** Docker keeps `value  # comment` as the value.

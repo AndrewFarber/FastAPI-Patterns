@@ -24,11 +24,11 @@ Not when:
 
 ## Pattern
 ```python
-# app/config/settings.py (fragment)
+# app/core/config/settings.py (fragment)
 from cachetools.func import ttl_cache
 
 
-@ttl_cache(maxsize=1, ttl=300)       # was @lru_cache: rebuilt every 5 minutes
+@ttl_cache(maxsize=1, ttl=300)
 def get_settings() -> Settings:
     return Settings()
 ```
