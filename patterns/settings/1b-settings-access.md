@@ -125,7 +125,7 @@ Most explicit: tests call `create_app(Settings(...))`. Code outside requests nee
 ## Rules
 - **Validate at import.** `app = create_app()` at module level builds settings before uvicorn listens.
 - **Startup objects in the lifespan.** The engine is built on startup and disposed on shutdown; nothing reads settings per request to rebuild it.
-- **`config/` creates, `dependencies/` hands out** ([[1a-layout-by-layer]]).
+- **`config/` creates, `dependencies/` hands out** ([[1b-layout-core]]).
 - **Keep the readiness route trivial.** `/healthz` returns a constant; a DB query there would fail every new instance on a database blip.
 
 ## Anti-patterns

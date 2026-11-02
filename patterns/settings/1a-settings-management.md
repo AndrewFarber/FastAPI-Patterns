@@ -3,7 +3,7 @@ title: "Settings management"
 category: project-structure
 tags: [settings, configuration, pydantic-settings]
 status: draft
-related: ["[[0-settings-guide]]", "[[1b-settings-access]]", "[[1c-settings-testing]]", "[[2a-settings-app]]", "[[2b-settings-db]]", "[[2c-settings-auth-cognito]]", "[[3b-settings-aws-sources]]", "[[1a-layout-by-layer]]"]
+related: ["[[0-settings-guide]]", "[[1b-settings-access]]", "[[1c-settings-testing]]", "[[2a-settings-app]]", "[[2b-settings-db]]", "[[2c-settings-auth-cognito]]", "[[3b-settings-aws-sources]]", "[[1b-layout-core]]"]
 ---
 
 # Settings management
@@ -144,4 +144,4 @@ CORS__ALLOW_ORIGINS='["http://localhost:3000"]'
 - [[2b-settings-db]]
 - [[2c-settings-auth-cognito]]
 - [[3b-settings-aws-sources]]
-- [[1a-layout-by-layer]]
+- [[1b-layout-core]]

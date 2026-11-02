@@ -1,5 +1,5 @@
 ---
-title: "Layout by domain: shared"
+title: "Layout: shared"
 category: project-structure
 tags:
   - project-layout
@@ -8,19 +8,19 @@ tags:
 status: draft
 related:
   - "[[0-layout-guide]]"
-  - "[[1b-layout-by-domain]]"
-  - "[[1b-layout-by-domain-core]]"
+  - "[[1a-layout]]"
+  - "[[1b-layout-core]]"
 ---
 
-# Layout by domain: shared
+# Layout: shared
 
-The `shared/` package in [[1b-layout-by-domain]]: stateless building blocks that services subclass or import as types. No state, no I/O, no business rules beyond shared value objects.
+The `shared/` package in [[1a-layout]]: stateless building blocks that services subclass or import as types. No state, no I/O, no business rules beyond shared value objects.
 
 ## Fits when
 - Two or more services repeat the same base classes, helpers, or value objects.
 
 Not when:
-- It holds state, opens connections, or does I/O: put it in [[1b-layout-by-domain-core]].
+- It holds state, opens connections, or does I/O: put it in [[1b-layout-core]].
 - Only one service uses it: keep it in that service.
 
 ## Signals
@@ -69,5 +69,5 @@ Add a folder only when a second service needs it.
 
 ## Related
 - [[0-layout-guide]]
-- [[1b-layout-by-domain]]
-- [[1b-layout-by-domain-core]]
+- [[1a-layout]]
+- [[1b-layout-core]]

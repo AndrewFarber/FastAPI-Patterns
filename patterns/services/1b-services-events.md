@@ -1,21 +1,20 @@
 ---
-title: "Layout by domain: events"
+title: "Services: events"
 category: project-structure
 tags:
-  - project-layout
   - modular-monolith
   - domain-driven-design
   - domain-events
 status: draft
 related:
-  - "[[0-layout-guide]]"
-  - "[[1b-layout-by-domain]]"
-  - "[[1b-layout-by-domain-calls]]"
-  - "[[1b-layout-by-domain-core]]"
-  - "[[1b-layout-by-domain-shared]]"
+  - "[[0-services-guide]]"
+  - "[[1a-layout]]"
+  - "[[1a-services-calls]]"
+  - "[[1b-layout-core]]"
+  - "[[1c-layout-shared]]"
 ---
 
-# Layout by domain: events
+# Services: events
 
 One service announces a fact, and other services react to it later in their own transaction. The publisher owns the event and never knows who listens; each subscriber decides what the fact means for its own domain.
 
@@ -25,7 +24,7 @@ One service announces a fact, and other services react to it later in their own 
 - A service keeps a local copy of another service's data (user names next to orders) instead of calling it on every request.
 
 Not when:
-- The caller can't continue without an answer: use [[1b-layout-by-domain-calls]].
+- The caller can't continue without an answer: use [[1a-services-calls]].
 - Both sides are in the same service: call the code directly.
 
 ## Signals
@@ -112,8 +111,8 @@ def register(bus: EventBus) -> None:
 - **Event ping-pong.** A → B → A chains are hard to follow and can loop; move the boundary instead.
 
 ## Related
-- [[0-layout-guide]]
-- [[1b-layout-by-domain]]
-- [[1b-layout-by-domain-calls]]
-- [[1b-layout-by-domain-core]]
-- [[1b-layout-by-domain-shared]]
+- [[0-services-guide]]
+- [[1a-layout]]
+- [[1a-services-calls]]
+- [[1b-layout-core]]
+- [[1c-layout-shared]]

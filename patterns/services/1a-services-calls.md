@@ -1,18 +1,17 @@
 ---
-title: "Layout by domain: calls"
+title: "Services: calls"
 category: project-structure
 tags:
-  - project-layout
   - modular-monolith
   - domain-driven-design
 status: draft
 related:
-  - "[[0-layout-guide]]"
-  - "[[1b-layout-by-domain]]"
-  - "[[1b-layout-by-domain-events]]"
+  - "[[0-services-guide]]"
+  - "[[1a-layout]]"
+  - "[[1b-services-events]]"
 ---
 
-# Layout by domain: calls
+# Services: calls
 
 One service calls another in-process and waits for the answer. The caller defines what it needs as a `Protocol` in its own domain, the owner exposes a small public interface, and the caller's `api/` connects them. Neither imports the other's internals, and the call can later become an HTTP call without touching the caller's domain.
 
@@ -20,7 +19,7 @@ One service calls another in-process and waits for the answer. The caller define
 - A use case can't continue without an answer from another service: "is the user active?", "reserve this stock".
 
 Not when:
-- The other service can act a moment later: publish a domain event instead ([[1b-layout-by-domain-events]]).
+- The other service can act a moment later: publish a domain event instead ([[1b-services-events]]).
 
 ## Signals
 - **Feature:** "only if the user is active", "check X in another domain before doing Y".
@@ -93,6 +92,6 @@ def place_order(command: PlaceOrder, orders: OrderRepository, users: UserDirecto
 - **Long call chains.** A → B → C on every request multiplies latency and failures; keep a local copy updated from events instead.
 
 ## Related
-- [[0-layout-guide]]
-- [[1b-layout-by-domain]]
-- [[1b-layout-by-domain-events]]
+- [[0-services-guide]]
+- [[1a-layout]]
+- [[1b-services-events]]

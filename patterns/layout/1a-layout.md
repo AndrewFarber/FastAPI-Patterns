@@ -1,5 +1,5 @@
 ---
-title: Layout by domain
+title: Layout
 category: project-structure
 tags:
   - project-layout
@@ -8,14 +8,12 @@ tags:
 status: draft
 related:
   - "[[0-layout-guide]]"
-  - "[[1a-layout-by-layer]]"
-  - "[[1b-layout-by-domain-core]]"
-  - "[[1b-layout-by-domain-shared]]"
-  - "[[1b-layout-by-domain-calls]]"
-  - "[[1b-layout-by-domain-events]]"
+  - "[[1b-layout-core]]"
+  - "[[1c-layout-shared]]"
+  - "[[0-services-guide]]"
 ---
 
-# Layout by domain
+# Layout
 
 One deployable app split into self-contained services, one per bounded context. Each service keeps its domain model free of framework code, and services talk through a public interface or domain events.
 
@@ -25,10 +23,10 @@ One deployable app split into self-contained services, one per bounded context. 
 - Services may later be extracted into separate deployments.
 
 Not when:
-- A small app with mostly CRUD: use [[1a-layout-by-layer]].
+- A small app with mostly CRUD and one team: `core/`, `shared/`, and the per-service layers cost more than they save.
 
 ## Signals
-- **Feature:** "add a new domain", "who owns this code", "when X happens, do Y in another domain".
+- **Feature:** "add a new domain", "who owns this code", "where does this go".
 - **Code:** business rules tangled with HTTP or ORM code; domains importing each other's models or queries.
 
 ## Pattern
@@ -62,11 +60,11 @@ tests/
 | Folder / file     | Holds                                                             |
 | ----------------- | ----------------------------------------------------------------- |
 | `main.py`         | App creation; mounts each service's router.                       |
-| `core/`           | Runtime infrastructure; see [[1b-layout-by-domain-core]].            |
-| `shared/`         | Stateless building blocks; see [[1b-layout-by-domain-shared]].       |
+| `core/`           | Runtime infrastructure; see [[1b-layout-core]].            |
+| `shared/`         | Stateless building blocks; see [[1c-layout-shared]].       |
 | `services/<name>` | One bounded context.                                              |
 | `__init__.py`     | Re-exports the public interface; nothing else.                    |
-| `public.py`       | What other services may call; see [[1b-layout-by-domain-calls]].     |
+| `public.py`       | What other services may call; see [[1a-services-calls]].     |
 | `domain/`         | The service's business model, free of framework code.             |
 | `entities.py`     | Entities and the value objects only this service uses.            |
 | `events.py`       | Domain events: facts the service announces.                       |
@@ -83,7 +81,7 @@ Split a file in `domain/` into a subpackage only when it outgrows one file. Add 
 - **Use cases depend on `Protocol`s:** they import `domain/`, never `infrastructure/`.
 - **Infrastructure implements the domain:** it imports `domain/` to implement its `Protocol`s, never `use_cases/` or `api/`.
 - **`api/` wires it together:** its `Depends()` providers build the repository implementations and pass them to the use cases. It is the only layer that imports both `use_cases/` and `infrastructure/`.
-- **Between services:** call another service's public interface ([[1b-layout-by-domain-calls]]), or react to its domain events ([[1b-layout-by-domain-events]]); never import its internals.
+- **Between services:** call its public interface or react to its domain events ([[0-services-guide]]); never import its internals.
 - **Each service owns its data:** its tables live in its own database schema (`orders`, `users`), and no other service queries them.
 - **Across packages:** services import `core/` and `shared/`; `core/` imports `shared/`; `shared/` imports neither. `core/` and `shared/` never import from `services/`.
 - **Tests mirror the services;** domain and use cases test without a database.
@@ -96,8 +94,6 @@ Split a file in `domain/` into a subpackage only when it outgrows one file. Add 
 
 ## Related
 - [[0-layout-guide]]
-- [[1a-layout-by-layer]]
-- [[1b-layout-by-domain-core]]
-- [[1b-layout-by-domain-shared]]
-- [[1b-layout-by-domain-calls]]
-- [[1b-layout-by-domain-events]]
+- [[1b-layout-core]]
+- [[1c-layout-shared]]
+- [[0-services-guide]]
