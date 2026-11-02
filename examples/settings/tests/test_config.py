@@ -1,5 +1,4 @@
 import json
-import logging
 import os
 import subprocess
 
@@ -7,13 +6,9 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from app.config.app import AppSettings
 from app.config.auth import AuthSettings
 from app.config.cors import CorsSettings
-from app.config.email import EmailSettings
-from app.config.log import LogSettings, configure_logging
 from app.config.settings import Settings, get_settings
-from app.observability import DeploymentFilter
 from conftest import TEST_VALUES, clear_settings_env, make_test_env
 
 
@@ -54,21 +49,9 @@ def test_frozen():
         Settings(**TEST_VALUES).app.name = "x"
 
 
-def test_app_build_metadata():
-    AppSettings(version="1.4.2", git_sha="abc1234")
-    with pytest.raises(ValidationError):
-        AppSettings(git_sha="main")
-
-
 def test_cors():
     with pytest.raises(ValidationError, match="wildcard"):
         CorsSettings(allow_origins=["*"], allow_credentials=True)
-
-
-def test_email():
-    with pytest.raises(ValidationError):
-        EmailSettings(smtp_host="h", from_address="not-an-email")
-    assert EmailSettings(smtp_host="h", from_address="a@example.com").security == "starttls"
 
 
 def test_auth_cognito_values(test_env, monkeypatch):
@@ -106,20 +89,19 @@ def test_shell_quoted_json_list(test_env, monkeypatch):
 
 def test_app_serves_healthz_with_engine_and_cors(create_app, monkeypatch):
     monkeypatch.setenv("CORS__ALLOW_ORIGINS", '["https://app.example.com"]')
-    monkeypatch.setenv("APP__VERSION", "1.4.2")
     get_settings.cache_clear()
     app = create_app()
-    with TestClient(app) as client:                           # runs the lifespan, like LWA at init
+    with TestClient(app) as client:                           # runs the lifespan, as at startup
         assert app.state.engine.url.database == "orders_test"
         response = client.get("/healthz", headers={"Origin": "https://app.example.com"})
-    assert response.json() == {"status": "ok", "version": "1.4.2"}
+    assert response.json() == {"status": "ok", "app": "orders-api"}
     assert response.headers["access-control-allow-origin"] == "https://app.example.com"
 
 
 def test_bad_config_fails_create_app(create_app, monkeypatch):
     monkeypatch.delenv("DB__HOST")
     get_settings.cache_clear()
-    with pytest.raises(ValidationError, match="host"):     # on Lambda: Runtime.InitError, readiness never passes
+    with pytest.raises(ValidationError, match="host"):
         create_app()
 
 
@@ -128,16 +110,3 @@ def test_developer_env_is_cleared(monkeypatch):
     monkeypatch.setenv("db__host", "prod-db")
     clear_settings_env(monkeypatch)
     assert "APP__IS_PRD" not in os.environ and "db__host" not in os.environ
-
-
-def test_json_logs_carry_deployment_from_child_loggers(capsys):
-    root = logging.getLogger()
-    handlers, level = root.handlers[:], root.level
-    try:
-        configure_logging(LogSettings(json_format=True), DeploymentFilter(AppSettings(version="1.4.2")))
-        logging.getLogger("app.orders.service").info("hello")
-    finally:
-        root.handlers[:] = handlers
-        root.setLevel(level)
-    line = json.loads(capsys.readouterr().out.splitlines()[-1])
-    assert (line["message"], line["level"], line["version"]) == ("hello", "INFO", "1.4.2")

@@ -18,7 +18,7 @@ Not when:
 
 ## Signals
 - **Feature:** "the frontend gets a CORS error", adding a frontend domain.
-- **Code:** `allow_origins=["*"]` with `allow_credentials=True`; origins hard-coded in `main.py`; origins with a trailing slash or path; CORS configured in a gateway or Function URL *and* the app.
+- **Code:** `allow_origins=["*"]` with `allow_credentials=True`; origins hard-coded in `main.py`; origins with a trailing slash or path; CORS configured in a gateway *and* the app.
 
 ## Pattern
 ```python
@@ -73,7 +73,7 @@ app.add_middleware(
 - **Origins are plain `str`, validated as `scheme://host[:port]`:** exactly what browsers send in `Origin`. `HttpUrl` would add a trailing slash.
 - **Empty by default:** no cross-origin access until configured.
 - **No wildcard with credentials** (validator), and no wildcard in production (root validator, [[1a-settings-management]]).
-- **One place only.** A gateway or Lambda Function URL CORS config answers preflights itself and duplicates headers, which browsers reject.
+- **One place only.** A gateway's CORS config answers preflights itself and overrides the app's headers, so the app's list silently stops applying.
 
 ## Anti-patterns
 - **Trailing slashes.** `https://app.example.com/` never matches.

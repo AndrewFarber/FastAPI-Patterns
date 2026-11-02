@@ -3,7 +3,7 @@ title: "Settings management"
 category: project-structure
 tags: [settings, configuration, pydantic-settings]
 status: draft
-related: ["[[0-settings-guide]]", "[[1b-settings-access]]", "[[1c-settings-testing]]", "[[2a-settings-app]]", "[[2b-settings-db]]", "[[2c-settings-auth]]", "[[3b-settings-aws-sources]]", "[[layout-by-layer]]"]
+related: ["[[0-settings-guide]]", "[[1b-settings-access]]", "[[1c-settings-testing]]", "[[2a-settings-app]]", "[[2b-settings-db]]", "[[2c-settings-auth-cognito]]", "[[3b-settings-aws-sources]]", "[[layout-by-layer]]"]
 ---
 
 # Settings management
@@ -18,7 +18,7 @@ Not when:
 
 ## Signals
 - **Feature:** a new env var, a new external service to configure, "make X configurable".
-- **Code:** `os.getenv(` or `os.environ[` outside `config/`; a flat `Settings` with `db_host`, `db_password: str`; nested models extending `BaseSettings`; `email_enabled: bool` next to email fields; per-environment subclasses (`ProdSettings`); `password: str` instead of `SecretStr`.
+- **Code:** `os.getenv(` or `os.environ[` outside `config/`; a flat `Settings` with `db_host`, `db_password: str`; nested models extending `BaseSettings`; `smtp_enabled: bool` next to the fields it switches; per-environment subclasses (`ProdSettings`); `password: str` instead of `SecretStr`.
 
 ## Pattern
 ```
@@ -28,9 +28,8 @@ config/
 ├── db.py           DbSettings         [[2b-settings-db]]
 ├── db_iam.py       IamAuth            [[2b-settings-db-iam-auth]]
 ├── db_rotated.py   RotatedSecretAuth  [[2b-settings-db-rotated-password]]
-├── auth.py         AuthSettings       [[2c-settings-auth]]
+├── auth.py         AuthSettings       [[2c-settings-auth-cognito]]
 ├── cors.py         CorsSettings       [[2d-settings-cors]]
-├── email.py        EmailSettings      [[2e-settings-email]]
 ├── features.py     FeatureSettings    [[2f-settings-feature-flags]]
 └── log.py          LogSettings, configure_logging()
 ```
@@ -39,7 +38,6 @@ Every sub-model looks like `LogSettings`: a plain `BaseModel`, frozen, rejecting
 
 ```python
 # app/config/log.py
-import json
 import logging
 import sys
 from typing import Literal
@@ -51,35 +49,12 @@ class LogSettings(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
-    json_format: bool = False
 
 
-# Attributes every LogRecord has; anything else was added by a filter or extra={...}
-_RECORD_FIELDS = set(vars(logging.LogRecord("", 0, "", 0, "", None, None))) | {"message", "asctime"}
-
-
-class JsonFormatter(logging.Formatter):
-    """One JSON object per line, so CloudWatch Logs Insights can query the fields."""
-
-    def format(self, record: logging.LogRecord) -> str:
-        entry = {
-            "time": self.formatTime(record),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-            **{k: v for k, v in vars(record).items() if k not in _RECORD_FIELDS},
-        }
-        if record.exc_info:
-            entry["exception"] = self.formatException(record.exc_info)
-        return json.dumps(entry, default=str)
-
-
-def configure_logging(log: LogSettings, *filters: logging.Filter) -> None:
-    """Send every logger's records to stdout (CloudWatch on Lambda) at the configured level."""
+def configure_logging(log: LogSettings) -> None:
+    """Send every logger's records to stdout at the configured level."""
     handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(JsonFormatter() if log.json_format else logging.Formatter("%(levelname)s %(name)s: %(message)s"))
-    for f in filters:
-        handler.addFilter(f)          # on the root handler, so records from child loggers get it too
+    handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
     logging.basicConfig(level=log.level, handlers=[handler], force=True)   # force: replace earlier handlers
 ```
 
@@ -95,7 +70,6 @@ from app.config.app import AppSettings
 from app.config.auth import AuthSettings
 from app.config.cors import CorsSettings
 from app.config.db import DbSettings
-from app.config.email import EmailSettings
 from app.config.features import FeatureSettings
 from app.config.log import LogSettings
 
@@ -117,9 +91,6 @@ class Settings(BaseSettings):
     log: LogSettings = Field(default_factory=LogSettings)
     features: FeatureSettings = Field(default_factory=FeatureSettings)
 
-    # Optional subsystem (None = disabled)
-    email: EmailSettings | None = None
-
     # Cross-concern rules live on the root class
     @model_validator(mode="after")
     def check_prod_safety(self) -> Self:
@@ -133,7 +104,7 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    """Built once per process (on Lambda: per execution environment). create_app() calls it at import."""
+    """Built once per process. create_app() calls it at import."""
     return Settings()
 ```
 
@@ -152,14 +123,14 @@ CORS__ALLOW_ORIGINS='["http://localhost:3000"]'
 - **`settings.py` only composes.** App-wide values live in `app.py` like any other concern.
 - **Concerns don't import each other.** Cross-concern rules ("no debug in prod") are a `model_validator` on the root; rules within a concern go on its sub-model.
 - **`frozen=True` and `extra="forbid"` on every model.** The root's `frozen` doesn't reach sub-models; `forbid` turns a typo (`DB__POOL_SZIE`) into a startup error.
-- **Required concerns have no default; safe concerns use `Field(default_factory=...)`; optional subsystems are `X | None = None`.** Code checks `settings.email is None`, never a separate `email_enabled` flag.
+- **Required concerns have no default; safe concerns use `Field(default_factory=...)`; optional subsystems are `X | None = None`.** Code checks `settings.smtp is None`, never a separate `smtp_enabled` flag.
 - **Defaults only for safe values** (log level, empty CORS list), never for credentials or hosts.
-- **Validate with types:** `SecretStr`, `EmailStr`, `Literal`, `Field(pattern=..., gt=...)`.
-- **No secrets in plain env vars when deployed.** Env vars carry a secret's ARN or name; the app reads the value ([[3b-settings-aws-sources]], [[2b-settings-db-rotated-password]]). On Lambda, env vars are readable via `GetFunctionConfiguration` and share 4 KB.
+- **Validate with types:** `SecretStr`, `Literal`, `Field(pattern=..., gt=...)`.
+- **No secrets in plain env vars when deployed.** Env vars carry a secret's ARN or name; the app reads the value ([[3b-settings-aws-sources]], [[2b-settings-db-rotated-password]]). Env vars are readable by anyone who can read the deployment configuration.
 - **One class for every environment.** Environments differ only by the values they set.
 
 ## Anti-patterns
-- **`os.environ` outside `config/`.** The one exception is platform metadata, not configuration (`AWS_LAMBDA_FUNCTION_VERSION`, [[2a-settings-app-build-metadata]]).
+- **`os.environ` outside `config/`.** Values read there skip validation and fail only when the code path runs.
 - **Plain `str` for secrets.** Only `SecretStr` is masked in logs, reprs, and tracebacks.
 - **A default for a required value.** A default host hides a missing env var until the app connects to the wrong place.
 - **Trailing comments in env files.** Docker keeps `value  # comment` as the value.
@@ -171,6 +142,6 @@ CORS__ALLOW_ORIGINS='["http://localhost:3000"]'
 - [[1c-settings-testing]]
 - [[2a-settings-app]]
 - [[2b-settings-db]]
-- [[2c-settings-auth]]
+- [[2c-settings-auth-cognito]]
 - [[3b-settings-aws-sources]]
 - [[layout-by-layer]]

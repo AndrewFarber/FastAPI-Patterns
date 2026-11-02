@@ -3,7 +3,7 @@ title: "Settings from AWS sources"
 category: project-structure
 tags: [settings, aws, secrets-manager, parameter-store, pydantic-settings]
 status: draft
-related: ["[[1a-settings-management]]", "[[1c-settings-testing]]", "[[3a-settings-secret-files]]", "[[4a-settings-refreshing-values]]"]
+related: ["[[1a-settings-management]]", "[[1c-settings-testing]]", "[[4a-settings-refreshing-values]]"]
 ---
 
 # Settings from AWS sources
@@ -11,16 +11,16 @@ related: ["[[1a-settings-management]]", "[[1c-settings-testing]]", "[[3a-setting
 Read Secrets Manager and Parameter Store as pydantic-settings sources, added only when their env var is set. Values pass through the same validation as env vars, at startup, and local runs and tests need no AWS access.
 
 ## Fits when
-- Secrets the app needs at startup, or more configuration than fits in env vars (4 KB on Lambda).
+- Secrets the app needs at startup, or more configuration than fits comfortably in env vars.
 
 Not when:
 - A few non-secret values: plain env vars set at deploy time, no AWS calls at startup.
 - Values change while the app runs: these load once per process ([[4a-settings-refreshing-values]]).
-- Local development and tests: env vars or [[3a-settings-secret-files]].
+- Local development and tests: plain env vars.
 
 ## Signals
-- **Feature:** "read the secret from Secrets Manager", "too many env vars", "config in Parameter Store"; adding, removing, or renaming a value there while a canary or rollback can run two versions.
-- **Code:** ad hoc `boto3` `get_secret_value` / `get_parameter` calls that fill settings by hand; secrets in deploy-time env vars or `{{resolve:secretsmanager:...}}`; a startup script that exports parameters as env vars; a PR that adds a required field and its shared value together.
+- **Feature:** "read the secret from Secrets Manager", "too many env vars", "config in Parameter Store".
+- **Code:** ad hoc `boto3` `get_secret_value` / `get_parameter` calls that fill settings by hand; secrets in deploy-time env vars or `{{resolve:secretsmanager:...}}`; a startup script that exports parameters as env vars.
 
 ## Pattern
 ```bash
@@ -91,23 +91,16 @@ AWS_DEFAULTS_MODE=in-region
 - **One source per field.** A sub-model may span both (`db/auth/method` in Parameter Store, `db--auth--password` in Secrets Manager).
 - **Names match field names, case-sensitively.** `extra="forbid"` catches wrong names inside a sub-model; a wrong first segment (`/orders/prd/Db/host`) is silently ignored.
 - **Lists are JSON strings.**
-- **Few calls per startup:** one secret, one small path (a `GetParametersByPath` call per 10 parameters). Every new Lambda instance repeats them, and Parameter Store allows 40 TPS per account by default.
+- **Few calls per startup:** one secret, one small path (a `GetParametersByPath` call per 10 parameters). Every new instance repeats them, and Parameter Store allows 40 TPS per account by default.
 - **Least privilege:** `GetSecretValue` on the app's secret ARN (`-??????` suffix, not `-*`), `GetParametersByPath` on its path.
-- **Shared values change by expand, then contract.** Old and new versions read the same path and secret, and `extra="forbid"` rejects what a version doesn't know:
-    - *Add:* release a version that declares the field with a default → once no older version can get traffic (rollbacks included), add the value → later, optionally drop the default.
-    - *Remove:* release a version that stops using the field but still declares it → once no older version can get traffic, delete the value → later, delete the field.
-    - *Rename* = add + remove. For large changes, give each release its own path (`AWS_SSM_PATH=/orders/prd/releases/1.4.2`); keep secrets shared.
 
 ## Anti-patterns
-- **Secrets in env vars,** including `{{resolve:secretsmanager:...}}`: plain text in the function configuration.
+- **Secrets in env vars,** including `{{resolve:secretsmanager:...}}`: plain text in the deployment configuration.
 - **Rebuilding settings often with these sources.** Each rebuild is AWS calls ([[4a-settings-refreshing-values-ttl]]).
 - **An `env_prefix` added later.** The sources inherit it; pass `env_prefix=""` to them.
-- **Adding a value before every runnable version accepts it,** or deleting a field and its value in one release. The other version fails its next startup.
-- **Relaxing `extra="forbid"` to ease deploys.** Typos are silently ignored again.
 - **No route to AWS from a VPC.** Every startup fails on the connect timeout; add a NAT gateway or interface endpoints.
 
 ## Related
 - [[1a-settings-management]]
 - [[1c-settings-testing]]
-- [[3a-settings-secret-files]]
 - [[4a-settings-refreshing-values]]

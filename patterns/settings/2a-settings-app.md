@@ -3,7 +3,7 @@ title: "App settings"
 category: project-structure
 tags: [settings]
 status: draft
-related: ["[[1a-settings-management]]", "[[2a-settings-app-build-metadata]]"]
+related: ["[[1a-settings-management]]"]
 ---
 
 # App settings
@@ -19,7 +19,7 @@ App-wide values (name, production toggle, debug) get their own `AppSettings` sub
 
 ## Pattern
 ```python
-# app/config/app.py (fragment: the full file is in 2a-settings-app-build-metadata)
+# app/config/app.py
 from pydantic import BaseModel, ConfigDict
 
 
@@ -33,7 +33,6 @@ class AppSettings(BaseModel):
 
 ## Rules
 - **`is_prd` is a bool, not an environment name.** It switches on the production checks on the root `Settings` (no debug, no wildcard CORS, [[1a-settings-management]]); anything that differs per stage is its own setting.
-- **Build facts** (version, git SHA, build time) go here too: [[2a-settings-app-build-metadata]].
 
 ## Anti-patterns
 - **`debug=True` in production.** FastAPI returns tracebacks to clients; the root validator rejects it.
@@ -41,4 +40,3 @@ class AppSettings(BaseModel):
 
 ## Related
 - [[1a-settings-management]]
-- [[2a-settings-app-build-metadata]]

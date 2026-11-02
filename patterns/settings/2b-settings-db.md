@@ -63,7 +63,7 @@ class DbSettings(BaseModel):
     # psycopg[binary]'s bundled OpenSSL looks for the OS trust store in a path that doesn't exist
     sslrootcert: FilePath | None = None
 
-    # Pool tuning. On Lambda: pool_size=1, max_overflow=0 (one request at a time per environment)
+    # Pool tuning: pool_size + max_overflow, times the number of instances, must fit max_connections
     pool_size: int = Field(default=5, gt=0)
     max_overflow: int = Field(default=10, ge=0)
     pool_timeout_seconds: float = Field(default=30, gt=0)
@@ -139,16 +139,16 @@ The engine is built once in the lifespan and disposed on shutdown ([[1b-settings
 - **Parts, not a URL.** `url` is a plain `@property` that `quote()`s the password; a computed field would appear in `repr()` and `model_dump()`.
 - **One auth model per method,** selected by `method`. `extra="forbid"` then rejects a password set alongside IAM. Methods without a static password add a connect hook in `build_engine()` ([[2b-settings-db-iam-auth]], [[2b-settings-db-rotated-password]]).
 - **Secure by default:** `sslmode` defaults to `verify-full` and requires `sslrootcert`; local development opts out with `DB__SSLMODE=disable`.
-- **`sslrootcert` is a CA bundle file in the image** (`FilePath`, checked at startup), not `system`: `psycopg[binary]`'s bundled OpenSSL looks for the OS store at a path that doesn't exist. For Amazon RDS use the RDS global bundle; for RDS Proxy the Amazon Root CAs. Trust roots, never intermediates.
+- **`sslrootcert` is a CA bundle file in the image** (`FilePath`, checked at startup), not `system`: `psycopg[binary]`'s bundled OpenSSL looks for the OS store at a path that doesn't exist. For Amazon RDS use the RDS global bundle. Trust roots, never intermediates.
 - **`host` is the real endpoint.** `verify-full` and IAM tokens check it; a DNS alias fails.
 - **`pool_pre_ping=True` always,** and `application_name` set for `pg_stat_activity`.
-- **On Lambda: `DB__POOL_SIZE=1`, `DB__MAX_OVERFLOW=0`** (one request at a time per instance), with RDS Proxy in front to absorb bursts of new instances.
+- **Size the pool for every instance:** `pool_size + max_overflow`, times the number of app instances, must stay under the database's `max_connections`.
 
 ## Anti-patterns
 - **A single `url` field.** Prints the password in reprs and logs.
 - **Unescaped passwords.** `PostgresDsn.build()` doesn't encode `@ / : %`.
 - **`sslmode=require` in production.** Encrypts but doesn't verify the server.
-- **Default pool sizes on Lambda.** 15 connections per instance times hundreds of instances exhausts the database.
+- **Default pool sizes when scaling out.** 15 connections per instance times dozens of instances exhausts the database.
 - **One flat model with every auth field optional.** Needs a validator per method and still accepts nonsense combinations.
 
 ## Related

@@ -9,4 +9,4 @@ class IamAuth(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     method: Literal["iam"]
-    region: str                                     # region of the RDS instance or RDS Proxy
+    region: str                                     # region of the RDS instance

@@ -38,7 +38,7 @@ class DbSettings(BaseModel):
     # psycopg[binary]'s bundled OpenSSL looks for the OS trust store in a path that doesn't exist
     sslrootcert: FilePath | None = None
 
-    # Pool tuning. On Lambda: pool_size=1, max_overflow=0 (one request at a time per environment)
+    # Pool tuning: pool_size + max_overflow, times the number of instances, must fit max_connections
     pool_size: int = Field(default=5, gt=0)
     max_overflow: int = Field(default=10, ge=0)
     pool_timeout_seconds: float = Field(default=30, gt=0)

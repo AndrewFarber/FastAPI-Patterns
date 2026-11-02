@@ -1,6 +1,3 @@
-import http.server
-import json
-import socketserver
 import threading
 import time
 
@@ -10,7 +7,6 @@ from cachetools.func import ttl_cache
 from moto import mock_aws
 
 from app.clients.aws_values import parameter_store_cache, secrets_manager_cache
-from app.clients.runtime_flags import AppConfigFlags, RuntimeFlags
 from app.clients.ttl_cache import TtlCache
 from app.config.settings import Settings
 
@@ -111,7 +107,7 @@ def test_ttl_cache_invalidate_keeps_the_fallback():
     assert cache.get("a") == "good"                           # refetch failed: last good value
 
 
-def test_aws_value_caches(aws_credentials):
+def test_aws_value_caches():
     with mock_aws():
         boto3.client("secretsmanager").create_secret(Name="s", SecretString="secret-value")
         boto3.client("ssm").put_parameter(Name="/p", Value="parameter-value", Type="SecureString")
@@ -145,31 +141,3 @@ def test_rebuild_failures_are_not_cached(test_env, monkeypatch):
         with pytest.raises(ValueError):
             get_settings()
     assert len(calls) == 3                                    # every call retries the full rebuild
-
-
-class FakeAgent(http.server.BaseHTTPRequestHandler):
-    body = b"{}"
-
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(FakeAgent.body)
-
-    def log_message(self, *args):
-        pass
-
-
-def test_appconfig_flags_fail_safe():
-    flags = AppConfigFlags("orders-api", "dev", "runtime-flags", timeout_seconds=0.3, retry_after_seconds=0)
-    assert flags.get() == RuntimeFlags()                      # no agent: safe defaults
-    socketserver.TCPServer.allow_reuse_address = True
-    server = socketserver.TCPServer(("127.0.0.1", 2772), FakeAgent)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    try:
-        FakeAgent.body = json.dumps({"payments_kill_switch": {"enabled": True}, "added_later": {"enabled": True}}).encode()
-        assert flags.get().payments_kill_switch is True
-        FakeAgent.body = b"not json"
-        assert flags.get().payments_kill_switch is True       # last good flags
-    finally:
-        server.shutdown()
-        server.server_close()

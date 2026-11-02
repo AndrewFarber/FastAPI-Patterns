@@ -8,7 +8,6 @@ from app.config.app import AppSettings
 from app.config.auth import AuthSettings
 from app.config.cors import CorsSettings
 from app.config.db import DbSettings
-from app.config.email import EmailSettings
 from app.config.features import FeatureSettings
 from app.config.log import LogSettings
 
@@ -30,9 +29,6 @@ class Settings(BaseSettings):
     log: LogSettings = Field(default_factory=LogSettings)
     features: FeatureSettings = Field(default_factory=FeatureSettings)
 
-    # Optional subsystem (None = disabled)
-    email: EmailSettings | None = None
-
     # Cross-concern rules live on the root class
     @model_validator(mode="after")
     def check_prod_safety(self) -> Self:
@@ -46,5 +42,5 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    """Built once per process (on Lambda: per execution environment). create_app() calls it at import."""
+    """Built once per process. create_app() calls it at import."""
     return Settings()

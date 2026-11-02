@@ -11,14 +11,14 @@ related: ["[[2b-settings-db]]", "[[2b-settings-db-rotated-password]]"]
 Settings hold only *how* to authenticate (`method: iam`, region); a SQLAlchemy `do_connect` hook signs a fresh 15-minute token per new connection. The app has no DB password to store or rotate.
 
 ## Fits when
-- The app connects to Amazon RDS, Aurora PostgreSQL, or RDS Proxy and runs with an AWS role.
+- The app connects to Amazon RDS or Aurora PostgreSQL and runs with an AWS role.
 
 Not when:
-- More than about 200 new connections per second straight to the database: authenticate to RDS Proxy instead (same code, proxy endpoint).
+- More than about 200 new connections per second: RDS throttles IAM authentication; use [[2b-settings-db-rotated-password]].
 - The database isn't on AWS, or other tools connecting to it can't generate tokens: [[2b-settings-db-rotated-password]].
 
 ## Signals
-- **Feature:** "no DB password", "IAM auth", "connect with the Lambda role".
+- **Feature:** "no DB password", "IAM auth", "connect with the app's role".
 - **Code:** `generate_db_auth_token(` called once at startup or stored in settings; a token passed in `DATABASE_URL`; `boto3` imported in `config/`.
 
 ## Pattern
@@ -35,7 +35,7 @@ class IamAuth(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     method: Literal["iam"]
-    region: str                                     # region of the RDS instance or RDS Proxy
+    region: str                                     # region of the RDS instance
 ```
 
 ```python
@@ -69,7 +69,7 @@ def add_iam_token(engine: Engine, db: DbSettings) -> None:
 - **Token per connection, in `do_connect`.** It only authenticates; open sessions outlive it.
 - **The auth model holds no secret,** only the method and region; the hook lives in `db/`, the model in `config/`.
 - **TLS required:** the hook refuses `sslmode=disable`.
-- **AWS side:** a dedicated DB user with `GRANT rds_iam`, and `rds-db:connect` on that user for the app's role. Behind RDS Proxy the user keeps its password and must *not* have `rds_iam`.
+- **AWS side:** a dedicated DB user with `GRANT rds_iam`, and `rds-db:connect` on that user for the app's role.
 
 ## Anti-patterns
 - **Tokens in settings or built at startup.** They expire after 15 minutes.

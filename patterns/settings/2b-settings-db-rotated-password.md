@@ -83,10 +83,11 @@ def add_rotated_password(engine: Engine, db: DbSettings) -> None:
 - **Read per new connection, through the cache** ([[4a-settings-refreshing-values-cache]]). Pooled connections stay open.
 - **Retry once, only when the secret changed.** libpq gives connection errors no SQLSTATE, so an auth failure looks like an outage; comparing secrets keeps an outage to one timeout.
 - **Take `username` from the secret too.** Alternating-users rotation switches between two users.
-- **The app user gets its own secret,** never the master's. Behind RDS Proxy rotate single-user (the proxy can't alternate); or authenticate to the proxy with IAM and drop this hook.
+- **Prefer alternating users.** With single-user rotation, the database has the new password a few seconds before `AWSCURRENT` does; new connections in that window fail, and the retry can't help because the secret hasn't changed yet. Open pooled connections are unaffected.
+- **The app user gets its own secret,** never the master's.
 
 ## Anti-patterns
-- **The password in an env var.** Frozen at deploy, broken at the first rotation, readable in the function configuration.
+- **The password in an env var.** Frozen at deploy, broken at the first rotation, readable in the deployment configuration.
 - **Retrying on every connection error.** A database outage takes twice as long to surface.
 
 ## Related

@@ -49,7 +49,7 @@ def test_connect_args(ca_bundle):
     }
 
 
-def test_iam_token_per_connection(aws_credentials, ca_bundle):
+def test_iam_token_per_connection(ca_bundle):
     db = DbSettings(host="orders.abc123.us-east-1.rds.amazonaws.com", user="orders_app", name="orders",
                     sslrootcert=ca_bundle, auth={"method": "iam", "region": "us-east-1"})
     engine = build_engine(db, "orders-api")
@@ -59,12 +59,12 @@ def test_iam_token_per_connection(aws_credentials, ca_bundle):
     assert "Action=connect" in cparams["password"]
 
 
-def test_iam_requires_tls(aws_credentials):
+def test_iam_requires_tls():
     with pytest.raises(ValueError, match="requires TLS"):
         build_engine(DbSettings(**LOCAL, auth={"method": "iam", "region": "us-east-1"}), "orders-api")
 
 
-def test_rotated_password_retries_after_rotation(aws_credentials, monkeypatch):
+def test_rotated_password_retries_after_rotation(monkeypatch):
     with mock_aws():
         sm = boto3.client("secretsmanager")
         sm.create_secret(Name="orders/prd/db-app", SecretString=json.dumps({"username": "orders_app", "password": "old"}))
