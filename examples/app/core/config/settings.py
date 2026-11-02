@@ -1,8 +1,15 @@
+import os
 from functools import lru_cache
 from typing import Self
 
 from pydantic import Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    AWSSecretsManagerSettingsSource,
+    AWSSystemsManagerSettingsSource,
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 from app.core.config.app import AppSettings
 from app.core.config.cors import CorsSettings
@@ -37,6 +44,24 @@ class Settings(BaseSettings):
             if isinstance(self.db.auth, PasswordAuth):
                 raise ValueError("password DB auth is for local use; prod uses iam")
         return self
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        sources = [init_settings, env_settings]
+
+        if secret_id := os.environ.get("AWS_SECRETS_MANAGER_SECRET_ID"):
+            sources.append(AWSSecretsManagerSettingsSource(settings_cls, secret_id))
+        if ssm_path := os.environ.get("AWS_SSM_PATH"):
+            sources.append(AWSSystemsManagerSettingsSource(settings_cls, ssm_path))
+
+        return tuple(sources)
 
 
 @lru_cache

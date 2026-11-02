@@ -1,28 +1,12 @@
 import json
-import os
 
 import boto3
 import pytest
 from moto import mock_aws
 from pydantic import ValidationError
-from pydantic_settings import (
-    AWSSecretsManagerSettingsSource,
-    AWSSystemsManagerSettingsSource,
-)
 
 from app.core.config.db import PasswordAuth
 from app.core.config.settings import Settings
-
-
-class AwsSettings(Settings):
-    @classmethod
-    def settings_customise_sources(cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings):
-        sources = [init_settings, env_settings]
-        if secret_id := os.environ.get("AWS_SECRETS_MANAGER_SECRET_ID"):
-            sources.append(AWSSecretsManagerSettingsSource(settings_cls, secret_id))
-        if ssm_path := os.environ.get("AWS_SSM_PATH"):
-            sources.append(AWSSystemsManagerSettingsSource(settings_cls, ssm_path))
-        return tuple(sources)
 
 
 def test_aws_sources_merge_secret_and_parameters(monkeypatch):
@@ -41,12 +25,12 @@ def test_aws_sources_merge_secret_and_parameters(monkeypatch):
         monkeypatch.setenv("AWS_SECRETS_MANAGER_SECRET_ID", "shop/prd/app")
         monkeypatch.setenv("AWS_SSM_PATH", "/shop/prd")
 
-        settings = AwsSettings()
+        settings = Settings()
         assert isinstance(settings.db.auth, PasswordAuth)
         assert settings.db.auth.password.get_secret_value() == "p@ss"
 
         monkeypatch.setenv("DB__HOST", "override")
-        assert AwsSettings().db.host == "override"
+        assert Settings().db.host == "override"
 
 
 def test_aws_parameter_typo_in_sub_model_fails(monkeypatch, test_env):
@@ -54,7 +38,7 @@ def test_aws_parameter_typo_in_sub_model_fails(monkeypatch, test_env):
         boto3.client("ssm").put_parameter(Name="/shop/prd/db/pool_szie", Value="1", Type="String")
         monkeypatch.setenv("AWS_SSM_PATH", "/shop/prd")
         with pytest.raises(ValidationError, match="pool_szie"):
-            AwsSettings()
+            Settings()
 
 
 def test_aws_parameter_typo_in_top_level_segment_is_ignored(monkeypatch, test_env):
@@ -63,7 +47,7 @@ def test_aws_parameter_typo_in_top_level_segment_is_ignored(monkeypatch, test_en
         ssm.put_parameter(Name="/shop/prd/corss/allow_origins", Value='["https://x.test"]', Type="String")
         ssm.put_parameter(Name="/shop/prd/Db/host", Value="wrong-case", Type="String")
         monkeypatch.setenv("AWS_SSM_PATH", "/shop/prd")
-        settings = AwsSettings()
+        settings = Settings()
         assert settings.cors.allow_origins == []
         assert settings.db.host == "localhost"
 

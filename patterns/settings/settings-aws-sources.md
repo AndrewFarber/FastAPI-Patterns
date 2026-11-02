@@ -38,7 +38,7 @@ uv add "pydantic-settings[aws-secrets-manager,aws-systems-manager]"
 ```
 
 ```python
-# app/core/config/settings.py (fragment)
+# app/core/config/settings.py (fragment: the full file is in settings-management)
 import os
 
 from pydantic_settings import (

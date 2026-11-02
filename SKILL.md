@@ -14,7 +14,7 @@ Match the vault's patterns against the work at hand, propose the ones that fit, 
 ## 2. Find candidate patterns
 1. Read `INDEX.md`, then the guide of each topic that could matter (`<topic>-guide.md`). Each guide row names a pattern in one line.
 2. Open only the notes whose line could apply. `[[some-note]]` is `some-note.md` somewhere under `patterns/`.
-3. In each note, read the **Overview** and **Rules**, then compare the **Code example** with the codebase: grep for the shapes the rules forbid (`os.getenv(`, `url: PostgresDsn`, `verify_aud=False`). A hit with its `file:line` is the evidence.
+3. In each note, read the **Overview** and **Rules**, then compare the **Code example** with the codebase: grep for the shapes the rules forbid (`os.getenv(`, `url: PostgresDsn`, `sslrootcert=system`). A hit with its `file:line` is the evidence.
 4. Ignore `TODO.md` and `_templates/`.
 
 ## 3. Judge the fit

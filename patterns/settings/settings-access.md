@@ -19,7 +19,7 @@ Build `Settings` once, at startup, through a cached `get_settings()`, and hand i
 - **Startup objects in the lifespan.** The engine is built on startup and disposed on shutdown; nothing reads settings per request to rebuild it.
 - **`core/config/` creates, `core/dependencies/` hands out** ([[layout-core]]).
 - **Only entry points read `Settings`.** Routes, `create_app()`, the lifespan, and workers; use cases, repositories, and domain code get sub-models as arguments.
-- **Keep the readiness route trivial.** `/healthz` returns a constant; a DB query there would fail every new instance on a database blip.
+- **Keep the readiness route trivial.** `/healthz` checks no dependency; a DB query there would fail every new instance on a database blip.
 
 ## Code example
 `get_settings()` is `lru_cache`d next to `Settings` ([[settings-management]]); `core/dependencies/` turns it into `SettingsDep`:

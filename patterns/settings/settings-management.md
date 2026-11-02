@@ -10,6 +10,7 @@ related:
   - "[[settings-cors]]"
   - "[[services-events]]"
   - "[[settings-feature-flags]]"
+  - "[[layout-core]]"
 ---
 
 # Settings management
@@ -20,7 +21,7 @@ All configuration goes through one typed, frozen `Settings` object, composed fro
 ## Rules
 - **One concern per file**, its sub-model named `<Concern>Settings`. Variants of a concern get their own files (`db.py` imports `db_iam.py`).
 - **Only the root is a `BaseSettings`.** Sub-models are plain `BaseModel`; only the root reads the environment.
-- **`settings.py` only composes.** App-wide values live in `app.py` like any other concern.
+- **`settings.py` only composes:** the sub-models, the cross-concern rules, and the sources. App-wide values live in `app.py` like any other concern.
 - **Concerns don't import each other.** Cross-concern rules ("no debug in prod", "no password DB auth in prod") are a `model_validator` on the root; rules within a concern go on its sub-model.
 - **`frozen=True` and `extra="forbid"` on every model.** The root's `frozen` doesn't reach sub-models; `forbid` turns a typo (`DB__POOL_SZIE`) into a startup error.
 - **Required concerns have no default; safe concerns use `Field(default_factory=...)`; optional subsystems are `X | None = None`.** Code checks `settings.smtp is None`, never a separate `smtp_enabled` flag.
@@ -32,7 +33,7 @@ All configuration goes through one typed, frozen `Settings` object, composed fro
 ## Code example
 ```
 config/
-├── settings.py     Settings: composes the sub-models, nothing else
+├── settings.py     Settings: composes the sub-models and sources
 ├── app.py          AppSettings        [[settings-app]]
 ├── db.py           DbSettings         [[settings-db]]
 ├── db_iam.py       IamAuth            [[settings-db-iam-auth]]
@@ -57,13 +58,22 @@ class LogSettings(BaseModel):
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 ```
 
+The root composes the sub-models, holds the cross-concern rules, and adds the AWS sources when their env vars are set ([[settings-aws-sources]]):
+
 ```python
 # app/core/config/settings.py
+import os
 from functools import lru_cache
 from typing import Self
 
 from pydantic import Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    AWSSecretsManagerSettingsSource,
+    AWSSystemsManagerSettingsSource,
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 from app.core.config.app import AppSettings
 from app.core.config.cors import CorsSettings
@@ -98,6 +108,24 @@ class Settings(BaseSettings):
             if isinstance(self.db.auth, PasswordAuth):
                 raise ValueError("password DB auth is for local use; prod uses iam")
         return self
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        sources = [init_settings, env_settings]
+
+        if secret_id := os.environ.get("AWS_SECRETS_MANAGER_SECRET_ID"):
+            sources.append(AWSSecretsManagerSettingsSource(settings_cls, secret_id))
+        if ssm_path := os.environ.get("AWS_SSM_PATH"):
+            sources.append(AWSSystemsManagerSettingsSource(settings_cls, ssm_path))
+
+        return tuple(sources)
 
 
 @lru_cache

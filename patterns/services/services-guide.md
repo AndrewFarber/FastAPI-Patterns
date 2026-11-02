@@ -2,7 +2,9 @@
 title: "Services guide"
 category: project-structure
 related:
-  - "[[layout-guide]]"
+  - "[[services-calls]]"
+  - "[[services-events]]"
+  - "[[layout]]"
 ---
 
 # Services guide

@@ -3,6 +3,8 @@ title: "Layout guide"
 category: project-structure
 related:
   - "[[layout]]"
+  - "[[layout-core]]"
+  - "[[layout-shared]]"
   - "[[services-guide]]"
 ---
 

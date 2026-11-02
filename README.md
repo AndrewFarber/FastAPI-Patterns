@@ -11,7 +11,7 @@ An Obsidian vault of FastAPI design patterns, also usable as a Claude Code skill
 `<topic>-<name>`, e.g. `settings-db`. A note for a specific capability extends the general note's name: `settings-db-iam-auth`. Order and grouping live in the guide, not in the name.
 
 ## Note sections
-New notes start from `_templates/pattern.md`: properties `title`, `category`, and `related` (the topic's guide and every note linked in the body), then **Overview**, **Rules**, and **Code example**.
+New notes start from `_templates/pattern.md`: properties `title`, `category`, and `related` (the topic's guide and every note linked in the body; a guide lists every note it links), then **Overview**, **Rules**, and **Code example**.
 
 ## Examples
 Code blocks whose first line is a full path (`# app/core/config/db.py`) are copies of files in `examples/`. Edit the file, never the block, then sync:

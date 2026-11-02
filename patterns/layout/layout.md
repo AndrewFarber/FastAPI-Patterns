@@ -33,7 +33,7 @@ app/
 ├── core/
 ├── shared/
 └── services/
-    ├── orders/
+    ├── users/
     │   ├── __init__.py
     │   ├── public.py
     │   ├── domain/
@@ -45,15 +45,17 @@ app/
     │   ├── infrastructure/
     │   │   ├── models.py
     │   │   └── repositories.py
-    │   ├── api/
-    │   │   ├── router.py
-    │   │   ├── schemas.py
-    │   │   └── dependencies.py
-    │   └── event_handlers/
-    └── users/
-        └── ...
+    │   └── api/
+    │       ├── router.py
+    │       ├── schemas.py
+    │       └── dependencies.py
+    └── orders/
+        ├── ...              same layers, without public.py and events.py
+        └── event_handlers/
 tests/
 ```
+
+A service has only the parts it uses: `users` is called by others and publishes an event, so it has `public.py` and `events.py`; `orders` calls users and reacts to its event, so it has `event_handlers/`.
 
 | Folder / file     | Holds                                                             |
 | ----------------- | ----------------------------------------------------------------- |
