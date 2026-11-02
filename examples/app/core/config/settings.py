@@ -5,7 +5,6 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.config.app import AppSettings
-from app.core.config.auth import AuthSettings
 from app.core.config.cors import CorsSettings
 from app.core.config.db import DbSettings, PasswordAuth
 from app.core.config.events import EventsSettings
@@ -21,7 +20,6 @@ class Settings(BaseSettings):
     )
 
     db: DbSettings
-    auth: AuthSettings
     events: EventsSettings
 
     app: AppSettings = Field(default_factory=AppSettings)

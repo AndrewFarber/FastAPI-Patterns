@@ -5,7 +5,6 @@ import subprocess
 import pytest
 from pydantic import ValidationError
 
-from app.core.config.auth import AuthSettings
 from app.core.config.cors import CorsSettings
 from app.core.config.settings import Settings, get_settings
 from conftest import TEST_VALUES, clear_settings_env, make_test_env
@@ -13,13 +12,13 @@ from conftest import TEST_VALUES, clear_settings_env, make_test_env
 
 def test_env_vars_load(test_env):
     s = get_settings()
-    assert s.db.name == "shop_test" and s.auth.audiences == ["test-client"]
+    assert s.db.name == "shop_test"
 
 
 def test_make_test_env_encodes_json():
     env = make_test_env()
     assert env["DB__HOST"] == "localhost"
-    assert json.loads(env["AUTH__AUDIENCES"]) == ["test-client"]
+    assert json.loads(env["DB__AUTH"]) == {"method": "password", "password": "test"}
 
 
 def test_typo_fails_startup(test_env, monkeypatch):
@@ -53,29 +52,6 @@ def test_frozen():
 def test_cors():
     with pytest.raises(ValidationError, match="wildcard"):
         CorsSettings(allow_origins=["*"], allow_credentials=True)
-
-
-def test_auth_cognito_values(test_env, monkeypatch):
-    for key, value in {
-        "AUTH__ISSUER": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_AbC123xyz",
-        "AUTH__AUDIENCES": '["1example23456789"]',
-        "AUTH__AUDIENCE_CLAIM": "client_id",
-        "AUTH__REQUIRED_CLAIMS": '{"token_use": "access"}',
-    }.items():
-        monkeypatch.setenv(key, value)
-    get_settings.cache_clear()
-    auth = get_settings().auth
-    assert auth.required_claims == {"token_use": "access"}
-    assert auth.resolved_jwks_url.endswith("/us-east-1_AbC123xyz/.well-known/jwks.json")
-
-
-def test_auth_rejects_unsafe_values():
-    with pytest.raises(ValidationError, match="https"):
-        AuthSettings(issuer="http://x", audiences=["a"])
-    with pytest.raises(ValidationError):
-        AuthSettings(issuer="https://x", audiences=["a"], algorithms=["HS256"])
-    with pytest.raises(ValidationError):
-        AuthSettings(issuer="https://x", audiences=[])
 
 
 def test_shell_quoted_json_list(test_env, monkeypatch):

@@ -50,7 +50,6 @@ TEST_VALUES: dict[str, dict[str, Any]] = {
         "host": "localhost", "user": "test", "name": "shop_test", "sslmode": "disable",
         "auth": {"method": "password", "password": "test"},
     },
-    "auth": {"issuer": "https://issuer.test", "audiences": ["test-client"]},
     "events": {"topic_arn": "arn:aws:sns:us-east-1:123456789012:shop-events"},
 }
 

@@ -7,7 +7,6 @@ related:
   - "[[settings-db-iam-auth]]"
   - "[[settings-app]]"
   - "[[settings-db]]"
-  - "[[settings-auth-cognito]]"
   - "[[settings-cors]]"
   - "[[services-events]]"
   - "[[settings-feature-flags]]"
@@ -37,7 +36,6 @@ config/
 ├── app.py          AppSettings        [[settings-app]]
 ├── db.py           DbSettings         [[settings-db]]
 ├── db_iam.py       IamAuth            [[settings-db-iam-auth]]
-├── auth.py         AuthSettings       [[settings-auth-cognito]]
 ├── cors.py         CorsSettings       [[settings-cors]]
 ├── events.py       EventsSettings     [[services-events]]
 ├── features.py     FeatureSettings    [[settings-feature-flags]]
@@ -76,7 +74,6 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.config.app import AppSettings
-from app.core.config.auth import AuthSettings
 from app.core.config.cors import CorsSettings
 from app.core.config.db import DbSettings, PasswordAuth
 from app.core.config.events import EventsSettings
@@ -92,7 +89,6 @@ class Settings(BaseSettings):
     )
 
     db: DbSettings
-    auth: AuthSettings
     events: EventsSettings
 
     app: AppSettings = Field(default_factory=AppSettings)

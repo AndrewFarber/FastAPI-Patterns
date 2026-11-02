@@ -15,7 +15,6 @@ related:
 | [[settings-app]] | App name, production toggle, debug. |
 | [[settings-db]] | Connection parts instead of a URL, password auth locally and IAM when deployed, verified TLS, pool. |
 | [[settings-db-iam-auth]] | Builds on [[settings-db]]: a fresh IAM token per connection through `do_connect`. |
-| [[settings-auth-cognito]] | Public values to verify Cognito access tokens (`client_id`, `token_use`), no secrets. |
 | [[settings-cors]] | Exact origins validated at startup, set in the app only. |
 | [[settings-feature-flags]] | Static typed flags, default off, passed into services. |
 | [[settings-aws-sources]] | Secrets Manager and Parameter Store as pydantic-settings sources, added only when configured. |
