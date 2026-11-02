@@ -1,26 +1,23 @@
 ---
 title: "CORS settings"
 category: auth-security
-tags: [settings, cors, security]
-status: draft
-related: ["[[1a-settings-management]]", "[[1b-settings-access]]"]
+related:
+  - "[[settings-guide]]"
+  - "[[settings-management]]"
 ---
 
 # CORS settings
 
+## Overview
 Allowed origins are a validated list in settings, empty by default, applied by the app's middleware and nowhere else. A malformed origin or wildcard-with-credentials fails at startup.
 
-## Fits when
-- Browsers call the API from another origin (a separate frontend domain or port).
+## Rules
+- **Origins are plain `str`, validated as `scheme://host[:port]`:** exactly what browsers send in `Origin`. `HttpUrl` would add a trailing slash.
+- **Empty by default:** no cross-origin access until configured.
+- **No wildcard with credentials** (validator), and no wildcard in production (root validator, [[settings-management]]).
+- **One place only.** A gateway's CORS config answers preflights itself and overrides the app's headers, so the app's list silently stops applying.
 
-Not when:
-- Only servers or mobile apps call it: leave the list empty.
-
-## Signals
-- **Feature:** "the frontend gets a CORS error", adding a frontend domain.
-- **Code:** `allow_origins=["*"]` with `allow_credentials=True`; origins hard-coded in `main.py`; origins with a trailing slash or path; CORS configured in a gateway *and* the app.
-
-## Pattern
+## Code example
 ```python
 # app/core/config/cors.py
 from typing import Self
@@ -56,7 +53,7 @@ class CorsSettings(BaseModel):
 ```
 
 ```python
-# app/main.py (fragment: the full file is in 1b-settings-access)
+# app/main.py (fragment: the full file is in settings-access)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors.allow_origins,
@@ -65,17 +62,3 @@ app.add_middleware(
     allow_credentials=settings.cors.allow_credentials,
 )
 ```
-
-## Rules
-- **Origins are plain `str`, validated as `scheme://host[:port]`:** exactly what browsers send in `Origin`. `HttpUrl` would add a trailing slash.
-- **Empty by default:** no cross-origin access until configured.
-- **No wildcard with credentials** (validator), and no wildcard in production (root validator, [[1a-settings-management]]).
-- **One place only.** A gateway's CORS config answers preflights itself and overrides the app's headers, so the app's list silently stops applying.
-
-## Anti-patterns
-- **Trailing slashes.** `https://app.example.com/` never matches.
-- **Expecting CORS to protect the API.** It only restricts browsers; authentication still applies.
-
-## Related
-- [[1a-settings-management]]
-- [[1b-settings-access]]

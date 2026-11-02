@@ -1,23 +1,25 @@
 ---
 title: "Testing settings"
 category: testing
-tags: [settings, pytest, fixtures]
-status: draft
-related: ["[[1a-settings-management]]", "[[1b-settings-access]]", "[[3b-settings-aws-sources]]"]
+related:
+  - "[[settings-guide]]"
+  - "[[settings-aws-sources]]"
+  - "[[services-events]]"
+  - "[[settings-access]]"
 ---
 
 # Testing settings
 
+## Overview
 Tests build settings from one dict of test values, through the environment rather than `dependency_overrides`, after clearing the developer's own settings variables. Every test gets a complete, valid `Settings` that no shell variable can change.
 
-## Fits when
-- Any test suite for an app that uses `Settings`.
+## Rules
+- **Set the environment, not overrides,** so startup code that calls `get_settings()` directly sees test values.
+- **`cache_clear()` before and after** each test that changes the environment.
+- **Pass every value a test depends on;** fields not passed fall back to the (cleaned) environment.
+- **AWS stays offline:** `aws_credentials` (autouse) drops the developer's `AWS_PROFILE` and sets fake keys in every test; AWS wiring is tested with `moto` ([[settings-aws-sources]]).
 
-## Signals
-- **Feature:** adding tests, a new setting that tests need, flaky tests that pass on one machine.
-- **Code:** `os.environ[...] =` in tests; `dependency_overrides[get_settings]`; no `get_settings.cache_clear()`; `from app.main import app` at the top of `conftest.py`; helpers named `test_*`.
-
-## Pattern
+## Code example
 ```python
 # tests/conftest.py
 import json
@@ -186,21 +188,5 @@ def client(create_app, aws, engine, monkeypatch) -> Iterator[TestClient]:
 - **`TEST_VALUES`** is the one source of test configuration; `make_test_env()` turns it into env vars.
 - **`clean_env`** (autouse) removes every env var whose prefix is a top-level `Settings` field, plus the AWS source switches, so `APP__IS_PRD=true` in a shell can't change a test.
 - **`create_app`** imports `app.main` only after `test_env`, because importing it builds the module-level app. Tests needing other values `monkeypatch.setenv`, `get_settings.cache_clear()`, then call it.
-- **`aws`** starts `moto` and creates the SNS topic from `TEST_VALUES`; **`workers`** builds the event consumers on the test engine, and `subscribe_queue()` / `deliver()` run the SQS hop ([[1b-services-events]]).
-- **Sub-models test on their own:** `FeatureSettings(new_checkout=True)`, no root `Settings` needed. Code below the entry points takes sub-models ([[1b-settings-access]]), so its tests never touch the environment.
-
-## Rules
-- **Set the environment, not overrides,** so startup code that calls `get_settings()` directly sees test values.
-- **`cache_clear()` before and after** each test that changes the environment.
-- **Pass every value a test depends on;** fields not passed fall back to the (cleaned) environment.
-- **AWS stays offline:** `aws_credentials` (autouse) drops the developer's `AWS_PROFILE` and sets fake keys in every test; AWS wiring is tested with `moto` ([[3b-settings-aws-sources]]).
-
-## Anti-patterns
-- **Importing `app.main` at the top of `conftest.py`.** Its `create_app()` runs at collection time, before any fixture.
-- **Helper names starting with `test_`.** pytest collects them.
-- **Forgetting `cache_clear()`.** The first test's settings stay cached for the session.
-
-## Related
-- [[1a-settings-management]]
-- [[1b-settings-access]]
-- [[3b-settings-aws-sources]]
+- **`aws`** starts `moto` and creates the SNS topic from `TEST_VALUES`; **`workers`** builds the event consumers on the test engine, and `subscribe_queue()` / `deliver()` run the SQS hop ([[services-events]]).
+- **Sub-models test on their own:** `FeatureSettings(new_checkout=True)`, no root `Settings` needed. Code below the entry points takes sub-models ([[settings-access]]), so its tests never touch the environment.

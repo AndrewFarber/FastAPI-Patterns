@@ -1,26 +1,29 @@
 ---
 title: "DB settings"
 category: persistence
-tags: [settings, database, postgres, sqlalchemy]
-status: draft
-related: ["[[0-settings-guide]]", "[[1a-settings-management]]", "[[2b-settings-db-iam-auth]]"]
+related:
+  - "[[settings-guide]]"
+  - "[[settings-db-iam-auth]]"
+  - "[[settings-management]]"
+  - "[[settings-access]]"
 ---
 
 # DB settings
 
-Store connection *parts*, not a URL, with authentication as a discriminated union of one model per method, and verified TLS by default. Deployed environments use IAM ([[2b-settings-db-iam-auth]]); a static password, kept in a `SecretStr`, is for local development and tests only.
+## Overview
+Store connection *parts*, not a URL, with authentication as a discriminated union of one model per method, and verified TLS by default. Deployed environments use IAM ([[settings-db-iam-auth]]); a static password, kept in a `SecretStr`, is for local development and tests only.
 
-## Fits when
-- The app connects to PostgreSQL through SQLAlchemy and uses [[1a-settings-management]].
+## Rules
+- **Parts, not a URL.** `url` is a plain `@property` that `quote()`s the password; a computed field would appear in `repr()` and `model_dump()`.
+- **One auth model per method,** selected by `method`. `extra="forbid"` then rejects a password set alongside IAM.
+- **`password` locally, `iam` when deployed.** The root validator rejects `PasswordAuth` when `app.is_prd` ([[settings-management]]); IAM adds its token hook in `build_engine()` ([[settings-db-iam-auth]]).
+- **Secure by default:** `sslmode` defaults to `verify-full` and requires `sslrootcert`; local development opts out with `DB__SSLMODE=disable`.
+- **`sslrootcert` is a CA bundle file in the image** (`FilePath`, checked at startup), not `system`: `psycopg[binary]`'s bundled OpenSSL looks for the OS store at a path that doesn't exist. For Amazon RDS use the RDS global bundle. Trust roots, never intermediates.
+- **`host` is the real endpoint.** `verify-full` and IAM tokens check it; a DNS alias fails.
+- **`pool_pre_ping=True` always,** and `application_name` set for `pg_stat_activity`.
+- **Size the pool for every instance:** `pool_size + max_overflow`, times the number of app instances, must stay under the database's `max_connections`.
 
-Not when:
-- Another database: keep the structure, change `scheme`, the DSN type (`MySQLDsn`), and the TLS fields.
-
-## Signals
-- **Feature:** connecting to a database, adding a DB auth method, TLS to the database, pool tuning.
-- **Code:** `DATABASE_URL` or `url: PostgresDsn` as a field; `create_engine(os.getenv(...))`; `@computed_field` URL; `sslmode=require`; one model with `password` and `iam_region` both optional; a DB password in a deployed environment; the engine created per request.
-
-## Pattern
+## Code example
 ```python
 # app/core/config/db.py
 from typing import Annotated, Literal, Self
@@ -115,26 +118,4 @@ def build_engine(db: DbSettings, application_name: str) -> Engine:
     return engine
 ```
 
-The engine is built once in the lifespan and disposed on shutdown ([[1b-settings-access]]).
-
-## Rules
-- **Parts, not a URL.** `url` is a plain `@property` that `quote()`s the password; a computed field would appear in `repr()` and `model_dump()`.
-- **One auth model per method,** selected by `method`. `extra="forbid"` then rejects a password set alongside IAM.
-- **`password` locally, `iam` when deployed.** The root validator rejects `PasswordAuth` when `app.is_prd` ([[1a-settings-management]]); IAM adds its token hook in `build_engine()` ([[2b-settings-db-iam-auth]]).
-- **Secure by default:** `sslmode` defaults to `verify-full` and requires `sslrootcert`; local development opts out with `DB__SSLMODE=disable`.
-- **`sslrootcert` is a CA bundle file in the image** (`FilePath`, checked at startup), not `system`: `psycopg[binary]`'s bundled OpenSSL looks for the OS store at a path that doesn't exist. For Amazon RDS use the RDS global bundle. Trust roots, never intermediates.
-- **`host` is the real endpoint.** `verify-full` and IAM tokens check it; a DNS alias fails.
-- **`pool_pre_ping=True` always,** and `application_name` set for `pg_stat_activity`.
-- **Size the pool for every instance:** `pool_size + max_overflow`, times the number of app instances, must stay under the database's `max_connections`.
-
-## Anti-patterns
-- **A single `url` field.** Prints the password in reprs and logs.
-- **Unescaped passwords.** `PostgresDsn.build()` doesn't encode `@ / : %`.
-- **`sslmode=require` in production.** Encrypts but doesn't verify the server.
-- **Default pool sizes when scaling out.** 15 connections per instance times dozens of instances exhausts the database.
-- **One flat model with every auth field optional.** Needs a validator per method and still accepts nonsense combinations.
-
-## Related
-- [[0-settings-guide]]
-- [[1a-settings-management]]
-- [[2b-settings-db-iam-auth]]
+The engine is built once in the lifespan and disposed on shutdown ([[settings-access]]).

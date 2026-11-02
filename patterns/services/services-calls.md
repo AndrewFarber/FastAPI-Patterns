@@ -1,31 +1,26 @@
 ---
 title: "Services: calls"
 category: project-structure
-tags:
-  - modular-monolith
-  - domain-driven-design
-status: draft
 related:
-  - "[[0-services-guide]]"
-  - "[[1a-layout]]"
-  - "[[1b-services-events]]"
+  - "[[services-guide]]"
 ---
 
 # Services: calls
 
+## Overview
 One service calls another in-process and waits for the answer. The caller defines what it needs as a `Protocol` in its own domain, the owner exposes a small public interface, and the caller's `api/` connects them. Neither imports the other's internals, and the call can later become an HTTP call without touching the caller's domain.
 
-## Fits when
-- A use case can't continue without an answer from another service: "is the user active?", "reserve this stock".
+## Rules
+- **Import only the owner's `__init__.py`:** never its `domain/`, `infrastructure/`, or `use_cases/`.
+- **The caller owns the `Protocol`:** it lists only the methods the caller uses, named in the caller's terms.
+- **Plain values or small DTOs across the boundary:** `bool`, IDs, or a `UserSummary`; never the owner's entities.
+- **The owner decides:** the public method applies the owner's rules; the caller never recomputes them from raw fields.
+- **Batch for lists:** fetch the page, then make one call with all its IDs (`users.get_names(user_ids)`), never one call per row.
+- **One direction:** if two services call each other, use events for one direction or move the boundary.
+- **Calls share the request's unit of work:** reads are fine; writes on both sides become one transaction, which is an exception to make deliberately, not by default.
+- **Tests use a fake:** the caller's tests pass a fake `UserDirectory`; the owner tests its public interface itself.
 
-Not when:
-- The other service can act a moment later: publish a domain event instead ([[1b-services-events]]).
-
-## Signals
-- **Feature:** "only if the user is active", "check X in another domain before doing Y".
-- **Code:** `from app.services.users.infrastructure` or `.domain` inside another service; another service's entities passed around; one service's tables read by another service's repository.
-
-## Pattern
+## Code example
 The caller states what it needs, in its own words, next to its repository `Protocol`s:
 
 ```python
@@ -119,24 +114,3 @@ def place_order(command: PlaceOrder, orders: OrderRepository, users: UserDirecto
 ```
 
 `UsersApi` never imports orders; it satisfies `UserDirectory` by having a matching method. If users moves to its own deployment, an `HttpUserDirectory` with the same method replaces it in `get_user_directory`, and nothing else in orders changes.
-
-## Rules
-- **Import only the owner's `__init__.py`:** never its `domain/`, `infrastructure/`, or `use_cases/`.
-- **The caller owns the `Protocol`:** it lists only the methods the caller uses, named in the caller's terms.
-- **Plain values or small DTOs across the boundary:** `bool`, IDs, or a `UserSummary`; never the owner's entities.
-- **The owner decides:** the public method applies the owner's rules; the caller never recomputes them from raw fields.
-- **Batch for lists:** fetch the page, then make one call with all its IDs (`users.get_names(user_ids)`), never one call per row.
-- **One direction:** if two services call each other, use events for one direction or move the boundary.
-- **Calls share the request's unit of work:** reads are fine; writes on both sides become one transaction, which is an exception to make deliberately, not by default.
-- **Tests use a fake:** the caller's tests pass a fake `UserDirectory`; the owner tests its public interface itself.
-
-## Anti-patterns
-- **Importing the owner's repository or ORM model.** The caller depends on its tables and breaks when they change.
-- **Returning the owner's entities.** The caller starts depending on the owner's model and its methods.
-- **Re-checking the rule in the caller.** `user.status == "active"` in orders misses bans or verification added to users later.
-- **Long call chains.** A → B → C on every request multiplies latency and failures; keep a local copy updated from events instead.
-
-## Related
-- [[0-services-guide]]
-- [[1a-layout]]
-- [[1b-services-events]]

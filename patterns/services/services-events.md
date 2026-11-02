@@ -1,40 +1,33 @@
 ---
 title: "Services: events"
 category: project-structure
-tags:
-  - modular-monolith
-  - domain-driven-design
-  - domain-events
-  - transactional-outbox
-  - aws-sns
-  - aws-sqs
-status: draft
 related:
-  - "[[0-services-guide]]"
-  - "[[1a-layout]]"
-  - "[[1a-services-calls]]"
-  - "[[1b-layout-core]]"
-  - "[[1c-layout-shared]]"
+  - "[[services-guide]]"
 ---
 
 # Services: events
 
+## Overview
 One service announces a fact, and other services react to it later in their own transaction. The event is stored in an outbox table in the publisher's transaction, sent to an SNS topic right after commit, and delivered to one SQS queue per subscribing service. The publisher owns the event and never knows who listens; each subscriber decides what the fact means for its own domain. No event is lost to a crash or an SNS outage, and a failing subscriber retries on its own without affecting the others.
 
-## Fits when
-- Another service should react, but the publisher doesn't need its answer: "when a user is deactivated, cancel their open orders".
-- Several services react to the same fact.
-- A service keeps a local copy of another service's data (user names next to orders) instead of calling it on every request.
+## Rules
+- **The publisher owns the event:** it lives in the publisher's `domain/events.py`, and subscribers import it only from the publisher's `__init__.py`.
+- **Facts, in the past tense:** `UserDeactivated`, named in the publisher's terms; never an instruction to a subscriber.
+- **Plain values only:** frozen dataclasses with IDs and the fields subscribers need, all JSON-serializable; never entities or ORM models.
+- **The class name is the wire name,** unique across the app. Change an event by adding fields with defaults; a renamed class or a changed meaning is a new event.
+- **Stored with the change:** the outbox row is written in the publisher's transaction; a rollback drops it.
+- **Sent after commit, before the response:** the unit of work dependency uses `scope="function"`. A failed commit becomes a 5xx instead of a 2xx for a change that never happened, and nothing runs after the response, when Lambda may already have frozen the environment.
+- **The sweeper catches what the relay missed:** a crash between commit and send, or SNS being down. Alarm on the age of the oldest pending row.
+- **At least once:** a failed batch, the sweeper racing the relay, and SNS and SQS themselves can deliver twice. The consumer records `(event_id, consumer)` in `events.processed` in the handler's transaction and skips repeats.
+- **No ordering:** standard topics and queues reorder messages; a handler that needs order checks the state it changes, not the order of events.
+- **One queue per subscribing service,** with its own DLQ, so a failing service retries without delaying the others. Its filter policy lists `consumer.event_names`.
+- **Handlers run in their own unit of work:** a failing handler doesn't undo the publisher's work, and an event a handler publishes goes through the outbox like any other.
+- **Handlers hold no rules:** they call a use case of their own service, like `api/` does.
+- **Purge old rows:** delete sent outbox rows and processed records older than the longest retry window (DLQ retention included), on a schedule.
+- **The worker image runs the Lambda runtime:** the `python` base image needs `awslambdaric` as its entry point and the handler as its command.
+- **Tests:** the publisher's tests pass a fake `EventPublisher` and assert the recorded events; the subscriber's tests call the handler with an event and a unit of work; one test runs the whole flow against `moto`'s SNS and SQS.
 
-Not when:
-- The caller can't continue without an answer: use [[1a-services-calls]].
-- Both sides are in the same service: call the code directly.
-
-## Signals
-- **Feature:** "when X happens, do Y in another domain", "notify", "keep in sync with".
-- **Code:** a use case that calls several other services after its own write; two services calling each other; the publisher importing a subscriber; `sns.publish` or `sqs.send_message` inside a use case or before commit; `BackgroundTasks` used to publish events; an in-process event bus whose events vanish on a crash.
-
-## Pattern
+## Code example
 ```
 request ─▶ use case ─▶ events.outbox row   (same transaction as the change)
              commit ─▶ relay ─▶ SNS topic  (before the response is sent)
@@ -426,36 +419,3 @@ Infrastructure, one set per subscribing service:
 Plus one **Lambda** `app.workers.sweep_outbox` on an EventBridge schedule (every minute).
 
 Users never imports orders; adding another subscriber means a new consumer, queue, and subscription, and nothing changes in users.
-
-## Rules
-- **The publisher owns the event:** it lives in the publisher's `domain/events.py`, and subscribers import it only from the publisher's `__init__.py`.
-- **Facts, in the past tense:** `UserDeactivated`, named in the publisher's terms; never an instruction to a subscriber.
-- **Plain values only:** frozen dataclasses with IDs and the fields subscribers need, all JSON-serializable; never entities or ORM models.
-- **The class name is the wire name,** unique across the app. Change an event by adding fields with defaults; a renamed class or a changed meaning is a new event.
-- **Stored with the change:** the outbox row is written in the publisher's transaction; a rollback drops it.
-- **Sent after commit, before the response:** the unit of work dependency uses `scope="function"`. A failed commit becomes a 5xx instead of a 2xx for a change that never happened, and nothing runs after the response, when Lambda may already have frozen the environment.
-- **The sweeper catches what the relay missed:** a crash between commit and send, or SNS being down. Alarm on the age of the oldest pending row.
-- **At least once:** a failed batch, the sweeper racing the relay, and SNS and SQS themselves can deliver twice. The consumer records `(event_id, consumer)` in `events.processed` in the handler's transaction and skips repeats.
-- **No ordering:** standard topics and queues reorder messages; a handler that needs order checks the state it changes, not the order of events.
-- **One queue per subscribing service,** with its own DLQ, so a failing service retries without delaying the others. Its filter policy lists `consumer.event_names`.
-- **Handlers run in their own unit of work:** a failing handler doesn't undo the publisher's work, and an event a handler publishes goes through the outbox like any other.
-- **Handlers hold no rules:** they call a use case of their own service, like `api/` does.
-- **Purge old rows:** delete sent outbox rows and processed records older than the longest retry window (DLQ retention included), on a schedule.
-- **The worker image runs the Lambda runtime:** the `python` base image needs `awslambdaric` as its entry point and the handler as its command.
-- **Tests:** the publisher's tests pass a fake `EventPublisher` and assert the recorded events; the subscriber's tests call the handler with an event and a unit of work; one test runs the whole flow against `moto`'s SNS and SQS.
-
-## Anti-patterns
-- **Commands dressed as events.** `CancelUserOrders` published by users means users knows orders' rules; publish the fact and let orders decide.
-- **Publishing to SNS inside the transaction.** Subscribers react to a change that then rolls back.
-- **Publishing after commit without an outbox.** A crash or an SNS outage between the two loses the event for good.
-- **`BackgroundTasks` for the relay.** It runs after the response, which on Lambda may never happen, and a failure no longer reaches the client.
-- **One queue shared by every service.** One failing handler retries the message for all of them, and a poison message blocks unrelated work.
-- **Thin events that force a call back.** A handler that calls the publisher for every field it needs couples them again; put those fields in the event.
-- **Event ping-pong.** A → B → A chains are hard to follow and can loop; move the boundary instead.
-
-## Related
-- [[0-services-guide]]
-- [[1a-layout]]
-- [[1a-services-calls]]
-- [[1b-layout-core]]
-- [[1c-layout-shared]]
