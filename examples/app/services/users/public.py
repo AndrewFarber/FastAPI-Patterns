@@ -8,5 +8,7 @@ class UsersApi:
         self._users = SqlUserRepository(session)
 
     def is_active(self, user_id: int) -> bool:
-        user = self._users.get(user_id)
+        # The share lock keeps the answer true until the caller commits: a deactivation waits for
+        # the caller's transaction, so its UserDeactivated handler sees what the caller wrote
+        user = self._users.get_for_share(user_id)
         return user is not None and user.is_active()

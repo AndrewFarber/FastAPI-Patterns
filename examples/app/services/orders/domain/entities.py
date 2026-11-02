@@ -13,6 +13,7 @@ class Order:
     item: str
     status: OrderStatus = OrderStatus.OPEN
     id: int | None = None
+    version: int = 0
 
     def cancel(self) -> None:
         self.status = OrderStatus.CANCELLED

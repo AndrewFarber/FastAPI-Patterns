@@ -38,7 +38,7 @@ def test_failed_send_keeps_the_change_and_the_sweeper_sends_it(engine, relay, se
 
     monkeypatch.setattr(sender, "send", unreachable)
     with UnitOfWork(engine, relay) as uow:
-        uow.session.execute(text("INSERT INTO users (name, status) VALUES ('ann', 'deactivated')"))
+        uow.session.execute(text("INSERT INTO users (name, status, version) VALUES ('ann', 'deactivated', 1)"))
         uow.events.publish(UserDeactivated(user_id=1))
     with engine.connect() as conn:
         assert conn.scalar(text("SELECT count(*) FROM users")) == 1
@@ -48,3 +48,21 @@ def test_failed_send_keeps_the_change_and_the_sweeper_sends_it(engine, relay, se
     assert relay.sweep() == 1
     assert len(sender.sent) == 1 and outbox(engine)[0].sent_at is not None
     assert relay.sweep() == 0
+
+
+def test_one_failing_event_doesnt_hold_back_the_others(engine, relay, sender, monkeypatch):
+    poison = UserDeactivated(user_id=1)
+    send = sender.send
+
+    def fail_poison(event_type, body):
+        if json.loads(body)["payload"]["event_id"] == str(poison.event_id):
+            raise ValueError("message too large")
+        send(event_type, body)
+
+    monkeypatch.setattr(sender, "send", fail_poison)
+    with UnitOfWork(engine, relay) as uow:
+        uow.events.publish(poison)
+        uow.events.publish(UserDeactivated(user_id=2))
+    assert [json.loads(body)["payload"]["user_id"] for _, body in sender.sent] == [2]
+    assert relay.sweep() == 0
+    assert [row.event_id for row in outbox(engine) if row.sent_at is None] == [poison.event_id]

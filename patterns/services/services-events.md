@@ -18,7 +18,9 @@ One service announces a fact, and other services react to it later in their own 
 - **Stored with the change:** the outbox row is written in the publisher's transaction; a rollback drops it.
 - **Sent after commit, before the response:** the unit of work dependency uses `scope="function"`. A failed commit becomes a 5xx instead of a 2xx for a change that never happened, and nothing runs after the response, when Lambda may already have frozen the environment.
 - **The sweeper catches what the relay missed:** a crash between commit and send, or SNS being down. Alarm on the age of the oldest pending row.
-- **At least once:** a failed batch, the sweeper racing the relay, and SNS and SQS themselves can deliver twice. The consumer records `(event_id, consumer)` in `events.processed` in the handler's transaction and skips repeats.
+- **Each row is locked while it's sent:** the relay and the sweeper both select pending rows `FOR UPDATE SKIP LOCKED`, so they never send the same row; a row another one holds is left for it.
+- **One bad row doesn't block the rest:** each row is sent on its own; a row that fails stays pending and the next sweep retries it, while the rows after it go out. A row that never sends shows up in the oldest-pending alarm.
+- **At least once:** a crash or failed commit after a send, and SNS and SQS themselves, can deliver twice. The consumer records `(event_id, consumer)` in `events.processed` in the handler's transaction and skips repeats.
 - **No ordering:** standard topics and queues reorder messages; a handler that needs order checks the state it changes, not the order of events.
 - **One queue per subscribing service,** with its own DLQ, so a failing service retries without delaying the others. Its filter policy lists `consumer.event_names`.
 - **Handlers run in their own unit of work:** a failing handler doesn't undo the publisher's work, and an event a handler publishes goes through the outbox like any other.
@@ -163,7 +165,7 @@ class OutboxPublisher:
         self.event_ids.append(event.event_id)
 ```
 
-The relay sends rows to SNS and marks them sent. `relay()` runs after each commit and only logs a failure; `sweep()` runs on a schedule and sends whatever is still pending:
+The relay sends rows to SNS and marks them sent, one at a time, skipping rows another relay or sweep holds. `relay()` runs after each commit and only logs a failure; `sweep()` runs on a schedule and sends whatever is still pending:
 
 ```python
 # app/core/outbox/relay.py
@@ -195,26 +197,30 @@ class OutboxRelay:
         if not event_ids:
             return
         try:
-            self._send(select(OutboxRow).where(OutboxRow.event_id.in_(event_ids), OutboxRow.sent_at.is_(None)))
+            self._send(_pending().where(OutboxRow.event_id.in_(event_ids)))
         except Exception:
             logger.exception("relay of %d events failed; the sweeper will send them", len(event_ids))
 
     def sweep(self) -> int:
-        return self._send(
-            select(OutboxRow)
-            .where(OutboxRow.sent_at.is_(None))
-            .order_by(OutboxRow.created_at)
-            .limit(self._batch_size)
-            .with_for_update(skip_locked=True)
-        )
+        return self._send(_pending().order_by(OutboxRow.created_at).limit(self._batch_size))
 
     def _send(self, query: Select[tuple[OutboxRow]]) -> int:
+        sent = 0
         with Session(self._engine) as session, session.begin():
-            rows = session.scalars(query).all()
-            for row in rows:
-                self._sender.send(row.event_type, encode(row.event_type, row.payload))
+            for row in session.scalars(query).all():
+                try:
+                    self._sender.send(row.event_type, encode(row.event_type, row.payload))
+                except Exception:
+                    logger.exception("sending event %s failed; the next sweep retries it", row.event_id)
+                    continue
                 row.sent_at = datetime.now(UTC)
-        return len(rows)
+                sent += 1
+        return sent
+
+
+def _pending() -> Select[tuple[OutboxRow]]:
+    # Locked rows belong to another relay or sweep, which will send them
+    return select(OutboxRow).where(OutboxRow.sent_at.is_(None)).with_for_update(skip_locked=True)
 ```
 
 ```python

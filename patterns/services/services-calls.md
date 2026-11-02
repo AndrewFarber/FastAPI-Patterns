@@ -18,6 +18,7 @@ One service calls another in-process and waits for the answer. The caller define
 - **Batch for lists:** fetch the page, then make one call with all its IDs (`users.get_names(user_ids)`), never one call per row.
 - **One direction:** if two services call each other, use events for one direction or move the boundary.
 - **Calls share the request's unit of work:** reads are fine; writes on both sides become one transaction, which is an exception to make deliberately, not by default.
+- **A check the caller acts on holds until the caller commits:** `is_active` reads the user `FOR SHARE`, so a deactivation waits for the order to commit, and its `UserDeactivated` handler then sees and cancels it. Without the lock, a deactivation committed between the check and the insert leaves an open order for a deactivated user. A share lock blocks only writers to that row, never other readers.
 - **Tests use a fake:** the caller's tests pass a fake `UserDirectory`; the owner tests its public interface itself.
 
 ## Code example
@@ -40,7 +41,7 @@ class UserDirectory(Protocol):
     def is_active(self, user_id: int) -> bool: ...
 ```
 
-The owner exposes a public interface and re-exports it from `__init__.py`. The rule itself stays in its domain:
+The owner exposes a public interface and re-exports it from `__init__.py`. The rule itself stays in its domain, and the read locks the row the answer depends on:
 
 ```python
 # app/services/users/public.py
@@ -54,7 +55,9 @@ class UsersApi:
         self._users = SqlUserRepository(session)
 
     def is_active(self, user_id: int) -> bool:
-        user = self._users.get(user_id)
+        # The share lock keeps the answer true until the caller commits: a deactivation waits for
+        # the caller's transaction, so its UserDeactivated handler sees what the caller wrote
+        user = self._users.get_for_share(user_id)
         return user is not None and user.is_active()
 ```
 

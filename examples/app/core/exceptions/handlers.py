@@ -1,9 +1,9 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.shared.exceptions.base import DomainError, NotFoundError, RuleViolation
+from app.shared.exceptions.base import ConflictError, DomainError, NotFoundError, RuleViolation
 
-STATUS: dict[type[DomainError], int] = {NotFoundError: 404, RuleViolation: 409}
+STATUS: dict[type[DomainError], int] = {NotFoundError: 404, RuleViolation: 409, ConflictError: 409}
 
 
 def domain_error_response(request: Request, exc: Exception) -> JSONResponse:

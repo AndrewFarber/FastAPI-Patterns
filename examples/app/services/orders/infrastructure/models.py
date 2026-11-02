@@ -12,3 +12,4 @@ class OrderRow(Base):
     user_id: Mapped[int] = mapped_column(index=True)
     item: Mapped[str] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(20))
+    version: Mapped[int] = mapped_column(default=1)

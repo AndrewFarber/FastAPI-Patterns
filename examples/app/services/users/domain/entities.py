@@ -14,6 +14,7 @@ class User:
     name: str
     status: UserStatus = UserStatus.ACTIVE
     id: int | None = None
+    version: int = 0
 
     def is_active(self) -> bool:
         return self.status is UserStatus.ACTIVE

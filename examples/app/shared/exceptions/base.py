@@ -8,3 +8,7 @@ class NotFoundError(DomainError):
 
 class RuleViolation(DomainError):
     pass
+
+
+class ConflictError(DomainError):
+    pass
