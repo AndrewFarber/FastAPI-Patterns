@@ -3,7 +3,7 @@ title: "Auth settings for AWS Cognito"
 category: auth-security
 tags: [settings, authentication, cognito, jwt]
 status: draft
-related: ["[[0-settings-guide]]", "[[1a-settings-management]]", "[[layout-by-layer]]"]
+related: ["[[0-settings-guide]]", "[[1a-settings-management]]", "[[1a-layout-by-layer]]"]
 ---
 
 # Auth settings for AWS Cognito
@@ -72,7 +72,7 @@ AUTH__AUDIENCE_CLAIM=client_id
 AUTH__REQUIRED_CLAIMS='{"token_use": "access"}'
 ```
 
-Verification itself lives in `security/` (pure helpers) and is handed to routes by `dependencies/` ([[layout-by-layer]]).
+Verification itself lives in `security/` (pure helpers) and is handed to routes by `dependencies/` ([[1a-layout-by-layer]]).
 
 ## Rules
 - **No secrets.** Cognito signs with its private keys; every field is public.
@@ -96,4 +96,4 @@ Verification itself lives in `security/` (pure helpers) and is handed to routes 
 ## Related
 - [[0-settings-guide]]
 - [[1a-settings-management]]
-- [[layout-by-layer]]
+- [[1a-layout-by-layer]]
