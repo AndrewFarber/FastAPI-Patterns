@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.core.config.db import DbSettings, PasswordAuth
-from app.core.db.engine import build_engine
+from app.core.db.engine import build_engine, connect_args
 
 LOCAL = dict(host="localhost", user="app", name="shop", sslmode="disable")
 
@@ -39,7 +39,7 @@ def test_verify_full_needs_a_ca():
 
 def test_connect_args(ca_bundle):
     db = DbSettings(host="h", user="u", name="n", sslrootcert=ca_bundle, auth={"method": "password", "password": "p"})
-    assert db.connect_args("shop-api") == {
+    assert connect_args(db, "shop-api") == {
         "sslmode": "verify-full",
         "connect_timeout": 10,
         "application_name": "shop-api",

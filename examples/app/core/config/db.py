@@ -1,7 +1,6 @@
 from typing import Annotated, Literal, Self
-from urllib.parse import quote
 
-from pydantic import BaseModel, ConfigDict, Field, FilePath, PostgresDsn, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, FilePath, SecretStr, model_validator
 
 from app.core.config.db_iam import IamAuth
 
@@ -41,25 +40,3 @@ class DbSettings(BaseModel):
         if self.sslmode.startswith("verify") and self.sslrootcert is None:
             raise ValueError("sslrootcert is required when sslmode verifies the certificate")
         return self
-
-    @property
-    def url(self) -> PostgresDsn:
-        password = self.auth.password.get_secret_value() if isinstance(self.auth, PasswordAuth) else None
-        return PostgresDsn.build(
-            scheme=self.scheme,
-            username=self.user,
-            password=quote(password, safe="") if password else None,
-            host=self.host,
-            port=self.port,
-            path=self.name,
-        )
-
-    def connect_args(self, application_name: str) -> dict[str, str | int]:
-        args: dict[str, str | int] = {
-            "sslmode": self.sslmode,
-            "connect_timeout": self.connect_timeout_seconds,
-            "application_name": application_name,
-        }
-        if self.sslrootcert is not None:
-            args["sslrootcert"] = str(self.sslrootcert)
-        return args
