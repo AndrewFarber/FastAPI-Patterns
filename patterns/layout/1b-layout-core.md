@@ -25,7 +25,7 @@ Not when:
 - It has no state and does no I/O: put it in [[1c-layout-shared]].
 
 ## Signals
-- **Feature:** "every service needs X", "where does the event bus / storage client go".
+- **Feature:** "every service needs X", "where does the outbox / storage client go".
 - **Code:** the same plumbing copied across services; services importing each other just to reach shared infrastructure.
 
 ## Pattern
@@ -61,9 +61,9 @@ app/
 | `config/`        | Settings, one sub-model per concern; see [[1a-settings-management]].   |
 | `db/`            | Engine, sessions, ORM base and mixins, base repository, unit of work.  |
 | `cache/`         | Cache client and key/TTL helpers.                                      |
-| `events/`        | The in-process event bus; see [[1b-services-events]].          |
-| `outbox/`        | Stores events in the same transaction and relays them later.           |
-| `messaging/`     | Message broker publishers and consumers.                               |
+| `events/`        | Event wire format and consumers; see [[1b-services-events]].           |
+| `outbox/`        | Stores events in the publisher's transaction; relay and sweeper.       |
+| `messaging/`     | Message broker clients: the SNS sender.                                |
 | `tasks/`         | Background jobs run on demand.                                         |
 | `scheduler/`     | Registering and running periodic jobs.                                 |
 | `exceptions/`    | Mapping domain errors to HTTP responses.                               |
@@ -84,7 +84,7 @@ Add a folder only when a second service needs it.
 - **Folders only:** one folder per concern; no loose modules.
 - **No business rules:** anything about one domain belongs in that service.
 - **Imports:** `core/` imports `shared/`, never `services/`.
-- **Stateless parts go to `shared/`:** base event and error types live in [[1c-layout-shared]]; `core/` holds what runs them (the bus, the HTTP error mapping).
+- **Stateless parts go to `shared/`:** base event and error types live in [[1c-layout-shared]]; `core/` holds what runs them (the outbox, the consumer, the HTTP error mapping).
 - **Bases, not instances:** the base repository lives in `db/`; concrete repositories stay in each service's `infrastructure/`.
 - **Domain code never imports `core/`:** a service's `domain/` imports only from `shared/`.
 - **Tests mirror the folders.**

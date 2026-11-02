@@ -1,9 +1,16 @@
-def test_order_flow_across_services(client):
+from conftest import deliver, subscribe_queue
+
+
+def test_order_flow_across_services(client, workers, aws):
+    orders_queue = subscribe_queue(aws, workers.orders)
     ann = client.post("/users", json={"name": "ann"}).json()
     order = client.post("/orders", json={"user_id": ann["id"], "item": "book"})
     assert order.status_code == 201 and order.json()["status"] == "open"
 
     assert client.post(f"/users/{ann['id']}/deactivate").status_code == 204
+    assert client.get("/orders", params={"user_id": ann["id"]}).json()[0]["status"] == "open"
+
+    assert deliver(orders_queue, workers.orders) == {"batchItemFailures": []}
     assert client.get("/orders", params={"user_id": ann["id"]}).json() == []
 
     refused = client.post("/orders", json={"user_id": ann["id"], "item": "pen"})

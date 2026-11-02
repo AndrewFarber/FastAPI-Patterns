@@ -4,17 +4,18 @@ from typing import Self
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
-from app.core.events.bus import EventBus, RecordingPublisher
+from app.core.outbox.publisher import OutboxPublisher
+from app.core.outbox.relay import OutboxRelay
 
 
 class UnitOfWork:
-    def __init__(self, engine: Engine, bus: EventBus) -> None:
+    def __init__(self, engine: Engine, relay: OutboxRelay) -> None:
         self._engine = engine
-        self._bus = bus
+        self._relay = relay
 
     def __enter__(self) -> Self:
         self.session = Session(self._engine)
-        self.events = RecordingPublisher()
+        self.events = OutboxPublisher(self.session)
         return self
 
     def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> None:
@@ -23,4 +24,4 @@ class UnitOfWork:
                 self.session.rollback()
                 return
             self.session.commit()
-        self._bus.dispatch(self.events.events)
+        self._relay.relay(self.events.event_ids)

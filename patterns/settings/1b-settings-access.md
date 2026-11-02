@@ -49,9 +49,9 @@ from app.core.config.log import configure_logging
 from app.core.config.settings import get_settings
 from app.core.db.engine import build_engine
 from app.core.dependencies.settings import SettingsDep
-from app.core.events.bus import EventBus
 from app.core.exceptions import handlers as error_handlers
-from app.services.orders import event_handlers as orders_handlers
+from app.core.messaging.sns import build_sns_sender
+from app.core.outbox.relay import OutboxRelay
 from app.services.orders.api.router import router as orders_router
 from app.services.users.api.router import router as users_router
 
@@ -62,8 +62,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings = get_settings()
     app.state.engine = build_engine(settings.db, application_name=settings.app.name)
-    app.state.bus = EventBus(app.state.engine)
-    orders_handlers.register(app.state.bus)
+    app.state.relay = OutboxRelay(app.state.engine, build_sns_sender(settings.events), settings.events.sweep_batch_size)
     yield
     app.state.engine.dispose()
 
@@ -96,7 +95,7 @@ def create_app() -> FastAPI:
 app = create_app()
 ```
 
-Entry points read settings: routes through `SettingsDep`, and `create_app()`, the lifespan, and other process entry points (workers, scripts) by calling `get_settings()`. They pass sub-models down: a use case that needs flags takes `FeatureSettings` ([[2f-settings-feature-flags]]), `build_engine()` takes `DbSettings`. Tests set env vars and call `get_settings.cache_clear()` ([[1c-settings-testing]]).
+Entry points read settings: routes through `SettingsDep`, and `create_app()`, the lifespan, and other process entry points (`workers.py`, scripts) by calling `get_settings()`. They pass sub-models down: a use case that needs flags takes `FeatureSettings` ([[2f-settings-feature-flags]]), `build_engine()` takes `DbSettings`. Tests set env vars and call `get_settings.cache_clear()` ([[1c-settings-testing]]).
 
 ## Rules
 - **Validate at import.** `app = create_app()` at module level builds settings before uvicorn listens.

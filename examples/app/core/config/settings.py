@@ -8,6 +8,7 @@ from app.core.config.app import AppSettings
 from app.core.config.auth import AuthSettings
 from app.core.config.cors import CorsSettings
 from app.core.config.db import DbSettings, PasswordAuth
+from app.core.config.events import EventsSettings
 from app.core.config.features import FeatureSettings
 from app.core.config.log import LogSettings
 
@@ -21,6 +22,7 @@ class Settings(BaseSettings):
 
     db: DbSettings
     auth: AuthSettings
+    events: EventsSettings
 
     app: AppSettings = Field(default_factory=AppSettings)
     cors: CorsSettings = Field(default_factory=CorsSettings)

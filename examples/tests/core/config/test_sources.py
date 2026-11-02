@@ -35,6 +35,7 @@ def test_aws_sources_merge_secret_and_parameters(monkeypatch):
             "/shop/prd/db/host": "rds", "/shop/prd/db/user": "shop_app", "/shop/prd/db/name": "shop",
             "/shop/prd/db/sslmode": "disable", "/shop/prd/db/auth/method": "password",
             "/shop/prd/auth/issuer": "https://issuer.test", "/shop/prd/auth/audiences": '["c1"]',
+            "/shop/prd/events/topic_arn": "arn:aws:sns:us-east-1:123456789012:shop-events",
         }.items():
             ssm.put_parameter(Name=name, Value=value, Type="String")
         monkeypatch.setenv("AWS_SECRETS_MANAGER_SECRET_ID", "shop/prd/app")

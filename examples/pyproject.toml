@@ -15,7 +15,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "httpx>=0.27",
-    "moto[secretsmanager,ssm]>=5",
+    "moto[secretsmanager,sns,sqs,ssm]>=5",
     "pytest>=8",
 ]
 

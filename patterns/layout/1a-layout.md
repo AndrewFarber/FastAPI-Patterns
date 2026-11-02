@@ -33,6 +33,7 @@ Not when:
 ```
 app/
 ├── main.py
+├── workers.py
 ├── core/
 ├── shared/
 └── services/
@@ -60,6 +61,7 @@ tests/
 | Folder / file     | Holds                                                             |
 | ----------------- | ----------------------------------------------------------------- |
 | `main.py`         | App creation; mounts each service's router.                       |
+| `workers.py`      | Lambda entry points: event consumers, outbox sweeper.             |
 | `core/`           | Runtime infrastructure; see [[1b-layout-core]].            |
 | `shared/`         | Stateless building blocks; see [[1c-layout-shared]].       |
 | `services/<name>` | One bounded context.                                              |

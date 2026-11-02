@@ -18,7 +18,7 @@ How the services in [[1a-layout]] talk to each other without importing each othe
 
 ## 1. Between services
 - [[1a-services-calls]]: in-process calls through a `Protocol` the caller owns and a public interface the owner exposes.
-- [[1b-services-events]]: domain events: the publisher owns the fact, subscribers react after commit in their own transaction.
+- [[1b-services-events]]: domain events through a transactional outbox, an SNS topic, and one SQS queue per subscribing service; subscribers react in their own transaction, once per event.
 
 ## Related
 - [[1a-layout]]

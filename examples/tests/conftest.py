@@ -4,14 +4,20 @@ import os
 from collections.abc import Callable, Iterator
 from typing import Any
 
+import boto3
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from moto import mock_aws
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.pool import StaticPool
 
 from app.core.config.settings import Settings, get_settings
 from app.core.db.base import Base
+from app.core.events.consumer import EventConsumer
+from app.core.events.models import ProcessedEventRow
+from app.core.outbox.models import OutboxRow
+from app.core.outbox.relay import OutboxRelay
 from app.services.orders.infrastructure.models import OrderRow
 from app.services.users.infrastructure.models import UserRow
 
@@ -21,6 +27,7 @@ TEST_VALUES: dict[str, dict[str, Any]] = {
         "auth": {"method": "password", "password": "test"},
     },
     "auth": {"issuer": "https://issuer.test", "audiences": ["test-client"]},
+    "events": {"topic_arn": "arn:aws:sns:us-east-1:123456789012:shop-events"},
 }
 
 
@@ -56,13 +63,18 @@ def test_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 
 @pytest.fixture
-def create_app(test_env) -> Iterator[Callable[[], FastAPI]]:
+def restore_logging() -> Iterator[None]:
     root = logging.getLogger()
     handlers, level = root.handlers[:], root.level
-    from app.main import create_app
-    yield create_app
+    yield
     root.handlers[:] = handlers
     root.setLevel(level)
+
+
+@pytest.fixture
+def create_app(test_env, restore_logging) -> Callable[[], FastAPI]:
+    from app.main import create_app
+    return create_app
 
 
 @pytest.fixture(autouse=True)
@@ -76,7 +88,7 @@ def aws_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def engine() -> Iterator[Engine]:
-    tables = [UserRow.__table__, OrderRow.__table__]
+    tables = [UserRow.__table__, OrderRow.__table__, OutboxRow.__table__, ProcessedEventRow.__table__]
     schemas = {table.schema: None for table in tables}
     engine = create_engine(
         "sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
@@ -86,8 +98,62 @@ def engine() -> Iterator[Engine]:
     engine.dispose()
 
 
+class RecordingSender:
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, str]] = []
+
+    def send(self, event_type: str, body: str) -> None:
+        self.sent.append((event_type, body))
+
+
 @pytest.fixture
-def client(create_app, engine, monkeypatch) -> Iterator[TestClient]:
+def sender() -> RecordingSender:
+    return RecordingSender()
+
+
+@pytest.fixture
+def relay(engine, sender) -> OutboxRelay:
+    return OutboxRelay(engine, sender)
+
+
+@pytest.fixture
+def aws() -> Iterator[str]:
+    with mock_aws():
+        yield boto3.client("sns").create_topic(Name="shop-events")["TopicArn"]
+
+
+@pytest.fixture
+def workers(test_env, restore_logging, aws, engine, monkeypatch):
+    from app import workers
+
+    monkeypatch.setattr(workers, "build_engine", lambda db, application_name: engine)
+    return workers.create_workers()
+
+
+def subscribe_queue(topic_arn: str, consumer: EventConsumer) -> str:
+    sqs = boto3.client("sqs")
+    queue_url = sqs.create_queue(QueueName=f"shop-{consumer.name}-events")["QueueUrl"]
+    queue_arn = sqs.get_queue_attributes(QueueUrl=queue_url, AttributeNames=["QueueArn"])["Attributes"]["QueueArn"]
+    boto3.client("sns").subscribe(
+        TopicArn=topic_arn, Protocol="sqs", Endpoint=queue_arn,
+        Attributes={"RawMessageDelivery": "true", "FilterPolicy": json.dumps({"event_type": consumer.event_names})},
+    )
+    return queue_url
+
+
+def deliver(queue_url: str, consumer: EventConsumer) -> dict[str, list[dict[str, str]]]:
+    sqs = boto3.client("sqs")
+    messages = sqs.receive_message(QueueUrl=queue_url, MaxNumberOfMessages=10).get("Messages", [])
+    result = consumer.handle({"Records": [{"messageId": m["MessageId"], "body": m["Body"]} for m in messages]})
+    failed = {failure["itemIdentifier"] for failure in result["batchItemFailures"]}
+    for m in messages:
+        if m["MessageId"] not in failed:
+            sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=m["ReceiptHandle"])
+    return result
+
+
+@pytest.fixture
+def client(create_app, aws, engine, monkeypatch) -> Iterator[TestClient]:
     from app import main
 
     monkeypatch.setattr(main, "build_engine", lambda db, application_name: engine)

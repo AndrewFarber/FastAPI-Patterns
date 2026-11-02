@@ -5,6 +5,9 @@ tags:
   - modular-monolith
   - domain-driven-design
   - domain-events
+  - transactional-outbox
+  - aws-sns
+  - aws-sqs
 status: draft
 related:
   - "[[0-services-guide]]"
@@ -16,7 +19,7 @@ related:
 
 # Services: events
 
-One service announces a fact, and other services react to it later in their own transaction. The publisher owns the event and never knows who listens; each subscriber decides what the fact means for its own domain.
+One service announces a fact, and other services react to it later in their own transaction. The event is stored in an outbox table in the publisher's transaction, sent to an SNS topic right after commit, and delivered to one SQS queue per subscribing service. The publisher owns the event and never knows who listens; each subscriber decides what the fact means for its own domain. No event is lost to a crash or an SNS outage, and a failing subscriber retries on its own without affecting the others.
 
 ## Fits when
 - Another service should react, but the publisher doesn't need its answer: "when a user is deactivated, cancel their open orders".
@@ -29,9 +32,16 @@ Not when:
 
 ## Signals
 - **Feature:** "when X happens, do Y in another domain", "notify", "keep in sync with".
-- **Code:** a use case that calls several other services after its own write; two services calling each other; the publisher importing a subscriber.
+- **Code:** a use case that calls several other services after its own write; two services calling each other; the publisher importing a subscriber; `sns.publish` or `sqs.send_message` inside a use case or before commit; `BackgroundTasks` used to publish events; an in-process event bus whose events vanish on a crash.
 
 ## Pattern
+```
+request ─▶ use case ─▶ events.outbox row   (same transaction as the change)
+             commit ─▶ relay ─▶ SNS topic  (before the response is sent)
+  sweeper (every minute) ─▶ SNS            (rows the relay missed)
+SNS ─▶ SQS queue per service (+ DLQ) ─▶ consumer Lambda ─▶ handler, own transaction
+```
+
 The base type and the publisher `Protocol` live in `shared/events/`, so a service's domain can use them:
 
 ```python
@@ -98,7 +108,7 @@ def deactivate_user(command: DeactivateUser, users: UserRepository, events: Even
     events.publish(UserDeactivated(user_id=command.user_id))
 ```
 
-`publish` only records the event. The unit of work commits, and only then hands the recorded events to the bus; a rollback or a failed commit drops them:
+The unit of work gives use cases an `OutboxPublisher` bound to its session, so the event row commits or rolls back with the change. After commit it hands the new event IDs to the relay:
 
 ```python
 # app/core/db/unit_of_work.py
@@ -108,17 +118,18 @@ from typing import Self
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
-from app.core.events.bus import EventBus, RecordingPublisher
+from app.core.outbox.publisher import OutboxPublisher
+from app.core.outbox.relay import OutboxRelay
 
 
 class UnitOfWork:
-    def __init__(self, engine: Engine, bus: EventBus) -> None:
+    def __init__(self, engine: Engine, relay: OutboxRelay) -> None:
         self._engine = engine
-        self._bus = bus
+        self._relay = relay
 
     def __enter__(self) -> Self:
         self.session = Session(self._engine)
-        self.events = RecordingPublisher()
+        self.events = OutboxPublisher(self.session)
         return self
 
     def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> None:
@@ -127,96 +138,318 @@ class UnitOfWork:
                 self.session.rollback()
                 return
             self.session.commit()
-        self._bus.dispatch(self.events.events)
+        self._relay.relay(self.events.event_ids)
 ```
 
-The bus runs each handler in its own transaction and logs a failure instead of raising it, since the publisher's change is already committed:
+```python
+# app/core/outbox/publisher.py
+from datetime import UTC, datetime
+from uuid import UUID
+
+from sqlalchemy.orm import Session
+
+from app.core.events.messages import event_name, to_payload
+from app.core.outbox.models import OutboxRow
+from app.shared.events.base import DomainEvent
+
+
+class OutboxPublisher:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        self.event_ids: list[UUID] = []
+
+    def publish(self, event: DomainEvent) -> None:
+        self._session.add(OutboxRow(
+            event_id=event.event_id,
+            event_type=event_name(type(event)),
+            payload=to_payload(event),
+            created_at=datetime.now(UTC),
+        ))
+        self.event_ids.append(event.event_id)
+```
+
+The relay sends rows to SNS and marks them sent. `relay()` runs after each commit and only logs a failure; `sweep()` runs on a schedule and sends whatever is still pending:
 
 ```python
-# app/core/events/bus.py
+# app/core/outbox/relay.py
+import logging
+from datetime import UTC, datetime
+from typing import Protocol
+from uuid import UUID
+
+from sqlalchemy import Engine, Select, select
+from sqlalchemy.orm import Session
+
+from app.core.events.messages import encode
+from app.core.outbox.models import OutboxRow
+
+logger = logging.getLogger(__name__)
+
+
+class MessageSender(Protocol):
+    def send(self, event_type: str, body: str) -> None: ...
+
+
+class OutboxRelay:
+    def __init__(self, engine: Engine, sender: MessageSender, batch_size: int = 100) -> None:
+        self._engine = engine
+        self._sender = sender
+        self._batch_size = batch_size
+
+    def relay(self, event_ids: list[UUID]) -> None:
+        if not event_ids:
+            return
+        try:
+            self._send(select(OutboxRow).where(OutboxRow.event_id.in_(event_ids), OutboxRow.sent_at.is_(None)))
+        except Exception:
+            logger.exception("relay of %d events failed; the sweeper will send them", len(event_ids))
+
+    def sweep(self) -> int:
+        return self._send(
+            select(OutboxRow)
+            .where(OutboxRow.sent_at.is_(None))
+            .order_by(OutboxRow.created_at)
+            .limit(self._batch_size)
+            .with_for_update(skip_locked=True)
+        )
+
+    def _send(self, query: Select[tuple[OutboxRow]]) -> int:
+        with Session(self._engine) as session, session.begin():
+            rows = session.scalars(query).all()
+            for row in rows:
+                self._sender.send(row.event_type, encode(row.event_type, row.payload))
+                row.sent_at = datetime.now(UTC)
+        return len(rows)
+```
+
+```python
+# app/core/messaging/sns.py
+from typing import Any
+
+import boto3
+
+from app.core.aws.values import CLIENT_CONFIG
+from app.core.config.events import EventsSettings
+
+
+class SnsSender:
+    def __init__(self, topic_arn: str, client: Any) -> None:
+        self._topic_arn = topic_arn
+        self._client = client
+
+    def send(self, event_type: str, body: str) -> None:
+        self._client.publish(
+            TopicArn=self._topic_arn,
+            Message=body,
+            MessageAttributes={"event_type": {"DataType": "String", "StringValue": event_type}},
+        )
+
+
+def build_sns_sender(events: EventsSettings) -> SnsSender:
+    return SnsSender(events.topic_arn, boto3.client("sns", region_name=events.region, config=CLIENT_CONFIG))
+```
+
+The topic comes from settings; the region is read from its ARN:
+
+```python
+# app/core/config/events.py
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class EventsSettings(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    topic_arn: str = Field(pattern=r"^arn:aws:sns:[a-z0-9-]+:\d{12}:[\w-]+$")
+    sweep_batch_size: int = Field(default=100, gt=0)
+
+    @property
+    def region(self) -> str:
+        return self.topic_arn.split(":")[3]
+```
+
+Request handlers get the unit of work from a dependency with `scope="function"`, so commit and relay run when the route returns, before FastAPI sends the response:
+
+```python
+# app/core/dependencies/db.py
+from collections.abc import Iterator
+from typing import Annotated
+
+from fastapi import Depends, Request
+
+from app.core.db.unit_of_work import UnitOfWork
+
+
+def get_unit_of_work(request: Request) -> Iterator[UnitOfWork]:
+    with UnitOfWork(request.app.state.engine, request.app.state.relay) as uow:
+        yield uow
+
+
+UnitOfWorkDep = Annotated[UnitOfWork, Depends(get_unit_of_work, scope="function")]
+```
+
+Each subscribing service has its own consumer. It decodes the message, skips an event it already processed, and runs the handlers in one unit of work. A failure is reported as a batch item failure, so SQS retries only that message:
+
+```python
+# app/core/events/consumer.py
 import logging
 from collections import defaultdict
 from collections.abc import Callable
+from typing import Any
 
 from sqlalchemy import Engine
-from sqlalchemy.orm import Session
 
+from app.core.db.unit_of_work import UnitOfWork
+from app.core.events.messages import decode, event_name, from_payload
+from app.core.events.models import ProcessedEventRow
+from app.core.outbox.relay import OutboxRelay
 from app.shared.events.base import DomainEvent
 
 logger = logging.getLogger(__name__)
 
-type Handler[E: DomainEvent] = Callable[[E, Session], None]
+type Handler[E: DomainEvent] = Callable[[E, UnitOfWork], None]
 
 
-class EventBus:
-    def __init__(self, engine: Engine) -> None:
+class EventConsumer:
+    def __init__(self, name: str, engine: Engine, relay: OutboxRelay) -> None:
+        self.name = name
         self._engine = engine
+        self._relay = relay
+        self._types: dict[str, type[DomainEvent]] = {}
         self._handlers: dict[type[DomainEvent], list[Handler]] = defaultdict(list)
 
+    @property
+    def event_names(self) -> list[str]:
+        return sorted(self._types)
+
     def subscribe[E: DomainEvent](self, event_type: type[E], handler: Handler[E]) -> None:
+        self._types[event_name(event_type)] = event_type
         self._handlers[event_type].append(handler)
 
-    def dispatch(self, events: list[DomainEvent]) -> None:
-        for event in events:
-            for handler in self._handlers[type(event)]:
-                try:
-                    with Session(self._engine) as session, session.begin():
-                        handler(event, session)
-                except Exception:
-                    logger.exception("%s failed for %r", handler.__qualname__, event)
+    def handle(self, sqs_event: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
+        failures = []
+        for record in sqs_event["Records"]:
+            try:
+                self._handle(record["body"])
+            except Exception:
+                logger.exception("%s failed to handle message %s", self.name, record["messageId"])
+                failures.append({"itemIdentifier": record["messageId"]})
+        return {"batchItemFailures": failures}
 
-
-class RecordingPublisher:
-    def __init__(self) -> None:
-        self.events: list[DomainEvent] = []
-
-    def publish(self, event: DomainEvent) -> None:
-        self.events.append(event)
+    def _handle(self, body: str) -> None:
+        name, payload = decode(body)
+        event_type = self._types.get(name)
+        if event_type is None:
+            logger.warning("%s has no handler for %s; check the subscription's filter policy", self.name, name)
+            return
+        event = from_payload(event_type, payload)
+        with UnitOfWork(self._engine, self._relay) as uow:
+            if uow.session.get(ProcessedEventRow, (event.event_id, self.name)) is not None:
+                return
+            uow.session.add(ProcessedEventRow(event_id=event.event_id, consumer=self.name))
+            for handler in self._handlers[event_type]:
+                handler(event, uow)
 ```
 
-The subscriber's `event_handlers/` is an entry point like `api/`: it builds the implementations and calls a use case of its own service:
+The subscriber's `event_handlers/` is an entry point like `api/`: it builds the implementations from the unit of work and calls a use case of its own service:
 
 ```python
 # app/services/orders/event_handlers/user_deactivated.py
-from sqlalchemy.orm import Session
-
+from app.core.db.unit_of_work import UnitOfWork
 from app.services import users
 from app.services.orders.infrastructure.repositories import SqlOrderRepository
 from app.services.orders.use_cases.cancel_open_orders import CancelOpenOrders, cancel_open_orders
 
 
-def on_user_deactivated(event: users.UserDeactivated, session: Session) -> None:
-    cancel_open_orders(CancelOpenOrders(user_id=event.user_id), SqlOrderRepository(session))
+def on_user_deactivated(event: users.UserDeactivated, uow: UnitOfWork) -> None:
+    cancel_open_orders(CancelOpenOrders(user_id=event.user_id), SqlOrderRepository(uow.session))
 ```
 
 ```python
 # app/services/orders/event_handlers/__init__.py
-from app.core.events.bus import EventBus
+from app.core.events.consumer import EventConsumer
 from app.services import users
 from app.services.orders.event_handlers.user_deactivated import on_user_deactivated
 
 
-def register(bus: EventBus) -> None:
-    bus.subscribe(users.UserDeactivated, on_user_deactivated)
+def register(consumer: EventConsumer) -> None:
+    consumer.subscribe(users.UserDeactivated, on_user_deactivated)
 ```
 
-`main.py` builds the bus at startup and calls each service's `register(bus)`. Users never imports orders; adding another subscriber changes nothing in users.
+`app/workers.py` is the process entry point for the Lambda functions, like `main.py` is for the API. It builds settings, the engine, the relay, and one consumer per subscribing service when the module is imported, so bad config fails the Lambda init:
+
+```python
+# app/workers.py
+from dataclasses import dataclass
+from typing import Any
+
+from app.core.config.log import configure_logging
+from app.core.config.settings import get_settings
+from app.core.db.engine import build_engine
+from app.core.events.consumer import EventConsumer
+from app.core.messaging.sns import build_sns_sender
+from app.core.outbox.relay import OutboxRelay
+from app.services.orders import event_handlers as orders_handlers
+
+
+@dataclass(frozen=True)
+class Workers:
+    relay: OutboxRelay
+    orders: EventConsumer
+
+
+def create_workers() -> Workers:
+    settings = get_settings()
+    configure_logging(settings.log)
+    engine = build_engine(settings.db, application_name=f"{settings.app.name}-workers")
+    relay = OutboxRelay(engine, build_sns_sender(settings.events), settings.events.sweep_batch_size)
+    orders = EventConsumer("orders", engine, relay)
+    orders_handlers.register(orders)
+    return Workers(relay=relay, orders=orders)
+
+
+workers = create_workers()
+
+
+def handle_orders_events(event: dict[str, Any], context: Any) -> dict[str, list[dict[str, str]]]:
+    return workers.orders.handle(event)
+
+
+def sweep_outbox(event: dict[str, Any], context: Any) -> dict[str, int]:
+    return {"sent": workers.relay.sweep()}
+```
+
+Infrastructure, one set per subscribing service:
+- **SQS queue** `shop-orders-events`, with a dead-letter queue (`maxReceiveCount` 5) and a visibility timeout of at least six times the function timeout.
+- **SNS subscription** from `shop-events` to the queue, with `RawMessageDelivery` on and a `FilterPolicy` of `{"event_type": consumer.event_names}`, so the queue only receives events the service handles.
+- **Lambda** `app.workers.handle_orders_events` with the queue as event source and `ReportBatchItemFailures` on.
+
+Plus one **Lambda** `app.workers.sweep_outbox` on an EventBridge schedule (every minute).
+
+Users never imports orders; adding another subscriber means a new consumer, queue, and subscription, and nothing changes in users.
 
 ## Rules
 - **The publisher owns the event:** it lives in the publisher's `domain/events.py`, and subscribers import it only from the publisher's `__init__.py`.
 - **Facts, in the past tense:** `UserDeactivated`, named in the publisher's terms; never an instruction to a subscriber.
-- **Plain values only:** frozen dataclasses with IDs and the fields subscribers need; never entities or ORM models.
-- **Dispatch after commit:** a handler never sees an event whose transaction rolled back.
-- **Handlers run in their own transaction:** a failing handler doesn't undo the publisher's work, and the publisher doesn't wait for it.
-- **In-process bus by default, outbox when losing an event is costly:** `core/outbox/` stores the event in the publisher's transaction and relays it at least once.
-- **Handlers are idempotent:** the outbox can deliver an event twice; check by `event_id` or make the change safe to repeat.
+- **Plain values only:** frozen dataclasses with IDs and the fields subscribers need, all JSON-serializable; never entities or ORM models.
+- **The class name is the wire name,** unique across the app. Change an event by adding fields with defaults; a renamed class or a changed meaning is a new event.
+- **Stored with the change:** the outbox row is written in the publisher's transaction; a rollback drops it.
+- **Sent after commit, before the response:** the unit of work dependency uses `scope="function"`. A failed commit becomes a 5xx instead of a 2xx for a change that never happened, and nothing runs after the response, when Lambda may already have frozen the environment.
+- **The sweeper catches what the relay missed:** a crash between commit and send, or SNS being down. Alarm on the age of the oldest pending row.
+- **At least once:** a failed batch, the sweeper racing the relay, and SNS and SQS themselves can deliver twice. The consumer records `(event_id, consumer)` in `events.processed` in the handler's transaction and skips repeats.
+- **No ordering:** standard topics and queues reorder messages; a handler that needs order checks the state it changes, not the order of events.
+- **One queue per subscribing service,** with its own DLQ, so a failing service retries without delaying the others. Its filter policy lists `consumer.event_names`.
+- **Handlers run in their own unit of work:** a failing handler doesn't undo the publisher's work, and an event a handler publishes goes through the outbox like any other.
 - **Handlers hold no rules:** they call a use case of their own service, like `api/` does.
-- **Change events by adding fields with defaults;** a changed meaning is a new event.
-- **Tests:** the publisher's tests pass a fake `EventPublisher` and assert the recorded events; the subscriber's tests call the handler with an event directly.
+- **Purge old rows:** delete sent outbox rows and processed records older than the longest retry window (DLQ retention included), on a schedule.
+- **The worker image runs the Lambda runtime:** the `python` base image needs `awslambdaric` as its entry point and the handler as its command.
+- **Tests:** the publisher's tests pass a fake `EventPublisher` and assert the recorded events; the subscriber's tests call the handler with an event and a unit of work; one test runs the whole flow against `moto`'s SNS and SQS.
 
 ## Anti-patterns
 - **Commands dressed as events.** `CancelUserOrders` published by users means users knows orders' rules; publish the fact and let orders decide.
-- **Dispatching before commit.** Handlers send emails or cancel orders for a change that was rolled back.
+- **Publishing to SNS inside the transaction.** Subscribers react to a change that then rolls back.
+- **Publishing after commit without an outbox.** A crash or an SNS outage between the two loses the event for good.
+- **`BackgroundTasks` for the relay.** It runs after the response, which on Lambda may never happen, and a failure no longer reaches the client.
+- **One queue shared by every service.** One failing handler retries the message for all of them, and a poison message blocks unrelated work.
 - **Thin events that force a call back.** A handler that calls the publisher for every field it needs couples them again; put those fields in the event.
 - **Event ping-pong.** A → B → A chains are hard to follow and can loop; move the boundary instead.
 
