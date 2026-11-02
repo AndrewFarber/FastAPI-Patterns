@@ -33,7 +33,12 @@ logger = logging.getLogger(__name__)
 
 
 class TtlCache:
-    def __init__(self, fetch: Callable[[str], str], ttl_seconds: float, retry_seconds: float = 30) -> None:
+    def __init__(
+        self,
+        fetch: Callable[[str], str],
+        ttl_seconds: float,
+        retry_seconds: float = 30,
+    ) -> None:
         self._fetch = fetch
         self._ttl = ttl_seconds
         self._retry = min(retry_seconds, ttl_seconds)
@@ -48,7 +53,11 @@ class TtlCache:
         except Exception:
             if cached is None:
                 raise
-            logger.warning("refresh of %s failed; serving the last good value", key, exc_info=True)
+            logger.warning(
+                "refresh of %s failed; serving the last good value",
+                key,
+                exc_info=True,
+            )
             value, ttl = cached[1], self._retry
         self._values[key] = (time.monotonic() + ttl, value)
         return value
@@ -66,17 +75,33 @@ from botocore.config import Config
 
 from app.core.cache.ttl_cache import TtlCache
 
-CLIENT_CONFIG = Config(connect_timeout=1, read_timeout=2, retries={"mode": "standard", "max_attempts": 2})
+CLIENT_CONFIG = Config(
+    connect_timeout=1,
+    read_timeout=2,
+    retries={"mode": "standard", "max_attempts": 2},
+)
 
 
 def secrets_manager_cache(region: str, ttl_seconds: float) -> TtlCache:
-    client = boto3.client("secretsmanager", region_name=region, config=CLIENT_CONFIG)
-    return TtlCache(lambda secret_id: client.get_secret_value(SecretId=secret_id)["SecretString"], ttl_seconds)
+    client = boto3.client(
+        "secretsmanager", region_name=region, config=CLIENT_CONFIG
+    )
+    return TtlCache(
+        lambda secret_id: client.get_secret_value(SecretId=secret_id)[
+            "SecretString"
+        ],
+        ttl_seconds,
+    )
 
 
 def parameter_store_cache(region: str, ttl_seconds: float) -> TtlCache:
     client = boto3.client("ssm", region_name=region, config=CLIENT_CONFIG)
-    return TtlCache(lambda name: client.get_parameter(Name=name, WithDecryption=True)["Parameter"]["Value"], ttl_seconds)
+    return TtlCache(
+        lambda name: client.get_parameter(Name=name, WithDecryption=True)[
+            "Parameter"
+        ]["Value"],
+        ttl_seconds,
+    )
 ```
 
 An entry point builds the cache once at startup, from a sub-model that names the secret or parameter and its TTL, and passes it to whatever reads the value. The example app pauses ordering this way, without a redeploy. Settings hold only where the switch lives and how often to read it:
@@ -98,8 +123,11 @@ The lifespan builds the cache and reads the switch once, so a missing parameter 
 
 ```python
 # app/main.py (fragment)
-    app.state.parameters = parameter_store_cache(settings.switches.region, settings.switches.ttl_seconds)
-    app.state.parameters.get(settings.switches.orders_paused)  # a missing parameter fails startup, not every order
+    app.state.parameters = parameter_store_cache(
+        settings.switches.region, settings.switches.ttl_seconds
+    )
+    # A missing parameter fails startup, not every order
+    app.state.parameters.get(settings.switches.orders_paused)
 ```
 
 Orders states what it needs as a `Protocol`, `OrderSwitches` ([[services-calls]]); its infrastructure answers from the cache, and `api/dependencies.py` builds one per request from `app.state.parameters` and `settings.switches.orders_paused`:

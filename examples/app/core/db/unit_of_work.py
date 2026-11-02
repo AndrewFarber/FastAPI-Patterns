@@ -18,7 +18,12 @@ class UnitOfWork:
         self.events = OutboxPublisher(self.session)
         return self
 
-    def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
         with self.session:
             if exc_type is not None:
                 self.session.rollback()

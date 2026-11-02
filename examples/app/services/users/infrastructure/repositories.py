@@ -7,7 +7,12 @@ from app.services.users.infrastructure.models import UserRow
 
 
 def to_entity(row: UserRow) -> User:
-    return User(id=row.id, name=row.name, status=UserStatus(row.status), version=row.version)
+    return User(
+        id=row.id,
+        name=row.name,
+        status=UserStatus(row.status),
+        version=row.version,
+    )
 
 
 class SqlUserRepository:
@@ -20,8 +25,14 @@ class SqlUserRepository:
 
     def get_for_share(self, user_id: int) -> User | None:
         # FOR SHARE: the user can't change until this transaction ends
-        query = select(UserRow).where(UserRow.id == user_id).with_for_update(read=True)
-        row = self._session.scalars(query.execution_options(populate_existing=True)).one_or_none()
+        query = (
+            select(UserRow)
+            .where(UserRow.id == user_id)
+            .with_for_update(read=True)
+        )
+        row = self._session.scalars(
+            query.execution_options(populate_existing=True)
+        ).one_or_none()
         return None if row is None else to_entity(row)
 
     def add(self, user: User) -> User:
@@ -35,7 +46,9 @@ class SqlUserRepository:
         result = self._session.execute(
             update(UserRow)
             .where(UserRow.id == user.id, UserRow.version == user.version)
-            .values(name=user.name, status=user.status, version=user.version + 1)
+            .values(
+                name=user.name, status=user.status, version=user.version + 1
+            )
         )
         if result.rowcount != 1:
             raise UserChanged(user.id)

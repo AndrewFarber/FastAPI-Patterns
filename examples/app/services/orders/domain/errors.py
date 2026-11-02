@@ -13,4 +13,6 @@ class OrderingPaused(RuleViolation):
 
 class OrderChanged(ConflictError):
     def __init__(self, order_id: int | None) -> None:
-        super().__init__(f"order {order_id} was changed by another request; reload and retry")
+        super().__init__(
+            f"order {order_id} was changed by another request; reload and retry"
+        )

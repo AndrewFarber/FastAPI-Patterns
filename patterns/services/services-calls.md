@@ -60,8 +60,9 @@ class UsersApi:
         self._users = SqlUserRepository(session)
 
     def is_active(self, user_id: int) -> bool:
-        # The share lock keeps the answer true until the caller commits: a deactivation waits for
-        # the caller's transaction, so its UserDeactivated handler sees what the caller wrote
+        # The share lock keeps the answer true until the caller commits:
+        # a deactivation waits for the caller's transaction, so its
+        # UserDeactivated handler sees what the caller wrote
         user = self._users.get_for_share(user_id)
         return user is not None and user.is_active()
 ```
@@ -85,7 +86,11 @@ from fastapi import Depends, Request
 from app.core.dependencies.db import UnitOfWorkDep
 from app.core.dependencies.settings import SettingsDep
 from app.services import users
-from app.services.orders.domain.protocols import OrderRepository, OrderSwitches, UserDirectory
+from app.services.orders.domain.protocols import (
+    OrderRepository,
+    OrderSwitches,
+    UserDirectory,
+)
 from app.services.orders.infrastructure.repositories import SqlOrderRepository
 from app.services.orders.infrastructure.switches import ParameterOrderSwitches
 
@@ -98,8 +103,12 @@ def get_user_directory(uow: UnitOfWorkDep) -> UserDirectory:
     return users.UsersApi(uow.session)
 
 
-def get_order_switches(request: Request, settings: SettingsDep) -> OrderSwitches:
-    return ParameterOrderSwitches(request.app.state.parameters, settings.switches.orders_paused)
+def get_order_switches(
+    request: Request, settings: SettingsDep
+) -> OrderSwitches:
+    return ParameterOrderSwitches(
+        request.app.state.parameters, settings.switches.orders_paused
+    )
 
 
 OrderRepositoryDep = Annotated[OrderRepository, Depends(get_order_repository)]
@@ -113,7 +122,11 @@ from dataclasses import dataclass
 
 from app.services.orders.domain.entities import Order
 from app.services.orders.domain.errors import OrderingPaused, UserNotActive
-from app.services.orders.domain.protocols import OrderRepository, OrderSwitches, UserDirectory
+from app.services.orders.domain.protocols import (
+    OrderRepository,
+    OrderSwitches,
+    UserDirectory,
+)
 
 
 @dataclass(frozen=True)
@@ -122,7 +135,12 @@ class PlaceOrder:
     item: str
 
 
-def place_order(command: PlaceOrder, orders: OrderRepository, users: UserDirectory, switches: OrderSwitches) -> Order:
+def place_order(
+    command: PlaceOrder,
+    orders: OrderRepository,
+    users: UserDirectory,
+    switches: OrderSwitches,
+) -> Order:
     if switches.ordering_paused():
         raise OrderingPaused()
     if not users.is_active(command.user_id):

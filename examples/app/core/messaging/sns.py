@@ -15,9 +15,14 @@ class SnsSender:
         self._client.publish(
             TopicArn=self._topic_arn,
             Message=body,
-            MessageAttributes={"event_type": {"DataType": "String", "StringValue": event_type}},
+            MessageAttributes={
+                "event_type": {"DataType": "String", "StringValue": event_type}
+            },
         )
 
 
 def build_sns_sender(events: EventsSettings) -> SnsSender:
-    return SnsSender(events.topic_arn, boto3.client("sns", region_name=events.region, config=CLIENT_CONFIG))
+    return SnsSender(
+        events.topic_arn,
+        boto3.client("sns", region_name=events.region, config=CLIENT_CONFIG),
+    )

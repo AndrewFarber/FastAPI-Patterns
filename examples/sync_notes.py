@@ -12,7 +12,8 @@ block into an unchecked one.
 Edit code in examples/, never in a synced block: this script overwrites them.
 
     python sync_notes.py           rewrite out-of-date notes
-    python sync_notes.py --check   list out-of-date notes and exit 1 (used by the tests)
+    python sync_notes.py --check   list out-of-date notes and exit 1
+                                   (used by the tests)
 """
 
 import re
@@ -22,7 +23,9 @@ from pathlib import Path
 EXAMPLES = Path(__file__).resolve().parent
 PATTERNS = EXAMPLES.parent / "patterns"
 BLOCK = re.compile(
-    r"^```(?P<lang>python|dockerfile)\n# (?P<path>[\w./-]+\.py|(?:[\w./-]+/)?Dockerfile)\n.*?^```$",
+    r"^```(?P<lang>python|dockerfile)\n"
+    r"# (?P<path>[\w./-]+\.py|(?:[\w./-]+/)?Dockerfile)\n"
+    r".*?^```$",
     re.MULTILINE | re.DOTALL,
 )
 
@@ -31,7 +34,10 @@ def synced(note: Path, missing: list[str]) -> str:
     def replace(match: re.Match[str]) -> str:
         source = EXAMPLES / match["path"]
         if not source.is_file():
-            missing.append(f"{note.relative_to(PATTERNS.parent)}: # {match['path']} (label fragments as '(fragment)')")
+            missing.append(
+                f"{note.relative_to(PATTERNS.parent)}: # {match['path']} "
+                "(label fragments as '(fragment)')"
+            )
             return match[0]
         return f"```{match['lang']}\n# {match['path']}\n{source.read_text()}```"
 

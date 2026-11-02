@@ -41,14 +41,23 @@ class CorsSettings(BaseModel):
             if origin == "*":
                 continue
             parts = urlsplit(origin)
-            if parts.scheme not in ("http", "https") or not parts.netloc or origin != f"{parts.scheme}://{parts.netloc}":
-                raise ValueError(f"{origin!r} is not an origin like 'https://app.example.com' (no path or trailing slash)")
+            if (
+                parts.scheme not in ("http", "https")
+                or not parts.netloc
+                or origin != f"{parts.scheme}://{parts.netloc}"
+            ):
+                raise ValueError(
+                    f"{origin!r} is not an origin like "
+                    "'https://app.example.com' (no path or trailing slash)"
+                )
         return origins
 
     @model_validator(mode="after")
     def check_credentials(self) -> Self:
         if self.allow_credentials and "*" in self.allow_origins:
-            raise ValueError("allow_credentials can't be combined with a wildcard origin")
+            raise ValueError(
+                "allow_credentials can't be combined with a wildcard origin"
+            )
         return self
 ```
 

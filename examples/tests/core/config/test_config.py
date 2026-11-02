@@ -18,7 +18,10 @@ def test_env_vars_load(test_env):
 def test_make_test_env_encodes_json():
     env = make_test_env()
     assert env["DB__HOST"] == "localhost"
-    assert json.loads(env["DB__AUTH"]) == {"method": "password", "password": "test"}
+    assert json.loads(env["DB__AUTH"]) == {
+        "method": "password",
+        "password": "test",
+    }
 
 
 def test_typo_fails_startup(test_env, monkeypatch):
@@ -41,7 +44,9 @@ def test_prod_safety():
 
 
 def test_dump_masks_secrets():
-    assert '"password":"**********"' in Settings(**TEST_VALUES).model_dump_json()
+    assert (
+        '"password":"**********"' in Settings(**TEST_VALUES).model_dump_json()
+    )
 
 
 def test_frozen():

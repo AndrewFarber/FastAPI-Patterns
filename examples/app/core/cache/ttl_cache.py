@@ -6,7 +6,12 @@ logger = logging.getLogger(__name__)
 
 
 class TtlCache:
-    def __init__(self, fetch: Callable[[str], str], ttl_seconds: float, retry_seconds: float = 30) -> None:
+    def __init__(
+        self,
+        fetch: Callable[[str], str],
+        ttl_seconds: float,
+        retry_seconds: float = 30,
+    ) -> None:
         self._fetch = fetch
         self._ttl = ttl_seconds
         self._retry = min(retry_seconds, ttl_seconds)
@@ -21,7 +26,11 @@ class TtlCache:
         except Exception:
             if cached is None:
                 raise
-            logger.warning("refresh of %s failed; serving the last good value", key, exc_info=True)
+            logger.warning(
+                "refresh of %s failed; serving the last good value",
+                key,
+                exc_info=True,
+            )
             value, ttl = cached[1], self._retry
         self._values[key] = (time.monotonic() + ttl, value)
         return value

@@ -11,4 +11,6 @@ def get_unit_of_work(request: Request) -> Iterator[UnitOfWork]:
         yield uow
 
 
-UnitOfWorkDep = Annotated[UnitOfWork, Depends(get_unit_of_work, scope="function")]
+UnitOfWorkDep = Annotated[
+    UnitOfWork, Depends(get_unit_of_work, scope="function")
+]

@@ -54,13 +54,18 @@ TEST_VALUES: dict[str, dict[str, Any]] = {
         "auth": {"method": "password", "password": "test"},
     },
     "events": {"topic_arn": "arn:aws:sns:us-east-1:123456789012:shop-events"},
-    "switches": {"region": "us-east-1", "orders_paused": "/shop/switches/orders-paused"},
+    "switches": {
+        "region": "us-east-1",
+        "orders_paused": "/shop/switches/orders-paused",
+    },
 }
 
 
 def make_test_env() -> dict[str, str]:
     return {
-        f"{section}__{key}".upper(): json.dumps(value) if isinstance(value, (list, dict)) else str(value)
+        f"{section}__{key}".upper(): json.dumps(value)
+        if isinstance(value, (list, dict))
+        else str(value)
         for section, fields in TEST_VALUES.items()
         for key, value in fields.items()
     }
@@ -116,11 +121,18 @@ def aws_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def engine() -> Iterator[Engine]:
-    tables = [UserRow.__table__, OrderRow.__table__, OutboxRow.__table__, ProcessedEventRow.__table__]
+    tables = [
+        UserRow.__table__,
+        OrderRow.__table__,
+        OutboxRow.__table__,
+        ProcessedEventRow.__table__,
+    ]
     schemas = {table.schema: None for table in tables}
-    engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}).execution_options(
-        schema_translate_map=schemas
-    )
+    engine = create_engine(
+        "sqlite://",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    ).execution_options(schema_translate_map=schemas)
     Base.metadata.create_all(engine, tables=tables)
     yield engine
     engine.dispose()
@@ -147,7 +159,11 @@ def relay(engine, sender) -> OutboxRelay:
 @pytest.fixture
 def aws() -> Iterator[str]:
     with mock_aws():
-        boto3.client("ssm").put_parameter(Name=TEST_VALUES["switches"]["orders_paused"], Value="false", Type="String")
+        boto3.client("ssm").put_parameter(
+            Name=TEST_VALUES["switches"]["orders_paused"],
+            Value="false",
+            Type="String",
+        )
         yield boto3.client("sns").create_topic(Name="shop-events")["TopicArn"]
 
 
@@ -155,31 +171,55 @@ def aws() -> Iterator[str]:
 def workers(test_env, restore_logging, aws, engine, monkeypatch):
     from app import workers
 
-    monkeypatch.setattr(workers, "build_engine", lambda db, application_name: engine)
+    monkeypatch.setattr(
+        workers, "build_engine", lambda db, application_name: engine
+    )
     return workers.create_workers()
 
 
 def subscribe_queue(topic_arn: str, consumer: EventConsumer) -> str:
     sqs = boto3.client("sqs")
-    queue_url = sqs.create_queue(QueueName=f"shop-{consumer.name}-events")["QueueUrl"]
-    queue_arn = sqs.get_queue_attributes(QueueUrl=queue_url, AttributeNames=["QueueArn"])["Attributes"]["QueueArn"]
+    queue_url = sqs.create_queue(QueueName=f"shop-{consumer.name}-events")[
+        "QueueUrl"
+    ]
+    queue_arn = sqs.get_queue_attributes(
+        QueueUrl=queue_url, AttributeNames=["QueueArn"]
+    )["Attributes"]["QueueArn"]
     boto3.client("sns").subscribe(
         TopicArn=topic_arn,
         Protocol="sqs",
         Endpoint=queue_arn,
-        Attributes={"RawMessageDelivery": "true", "FilterPolicy": json.dumps({"event_type": consumer.event_names})},
+        Attributes={
+            "RawMessageDelivery": "true",
+            "FilterPolicy": json.dumps({"event_type": consumer.event_names}),
+        },
     )
     return queue_url
 
 
-def deliver(queue_url: str, consumer: EventConsumer) -> dict[str, list[dict[str, str]]]:
+def deliver(
+    queue_url: str, consumer: EventConsumer
+) -> dict[str, list[dict[str, str]]]:
     sqs = boto3.client("sqs")
-    messages = sqs.receive_message(QueueUrl=queue_url, MaxNumberOfMessages=10).get("Messages", [])
-    result = consumer.handle({"Records": [{"messageId": m["MessageId"], "body": m["Body"]} for m in messages]})
-    failed = {failure["itemIdentifier"] for failure in result["batchItemFailures"]}
+    messages = sqs.receive_message(
+        QueueUrl=queue_url, MaxNumberOfMessages=10
+    ).get("Messages", [])
+    result = consumer.handle(
+        {
+            "Records": [
+                {"messageId": m["MessageId"], "body": m["Body"]}
+                for m in messages
+            ]
+        }
+    )
+    failed = {
+        failure["itemIdentifier"] for failure in result["batchItemFailures"]
+    }
     for m in messages:
         if m["MessageId"] not in failed:
-            sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=m["ReceiptHandle"])
+            sqs.delete_message(
+                QueueUrl=queue_url, ReceiptHandle=m["ReceiptHandle"]
+            )
     return result
 
 
@@ -187,7 +227,9 @@ def deliver(queue_url: str, consumer: EventConsumer) -> dict[str, list[dict[str,
 def client(create_app, aws, engine, monkeypatch) -> Iterator[TestClient]:
     from app import main
 
-    monkeypatch.setattr(main, "build_engine", lambda db, application_name: engine)
+    monkeypatch.setattr(
+        main, "build_engine", lambda db, application_name: engine
+    )
     with TestClient(create_app()) as client:
         yield client
 ```

@@ -14,7 +14,9 @@ def to_payload(event: DomainEvent) -> dict[str, Any]:
     return TypeAdapter(type(event)).dump_python(event, mode="json")
 
 
-def from_payload[E: DomainEvent](event_type: type[E], payload: dict[str, Any]) -> E:
+def from_payload[E: DomainEvent](
+    event_type: type[E], payload: dict[str, Any]
+) -> E:
     return TypeAdapter(event_type).validate_python(payload)
 
 

@@ -17,7 +17,9 @@ class MessageSender(Protocol):
 
 
 class OutboxRelay:
-    def __init__(self, engine: Engine, sender: MessageSender, batch_size: int = 100) -> None:
+    def __init__(
+        self, engine: Engine, sender: MessageSender, batch_size: int = 100
+    ) -> None:
         self._engine = engine
         self._sender = sender
         self._batch_size = batch_size
@@ -28,23 +30,35 @@ class OutboxRelay:
         try:
             self._send(_pending().where(OutboxRow.event_id.in_(event_ids)))
         except Exception:
-            logger.exception("relay of %d events failed; the sweeper will send them", len(event_ids))
+            logger.exception(
+                "relay of %d events failed; the sweeper will send them",
+                len(event_ids),
+            )
 
     def sweep(self) -> int:
-        return self._send(_pending().order_by(OutboxRow.created_at).limit(self._batch_size))
+        return self._send(
+            _pending().order_by(OutboxRow.created_at).limit(self._batch_size)
+        )
 
     def purge(self, sent_before: datetime) -> int:
         with Session(self._engine) as session, session.begin():
-            return session.execute(delete(OutboxRow).where(OutboxRow.sent_at < sent_before)).rowcount
+            return session.execute(
+                delete(OutboxRow).where(OutboxRow.sent_at < sent_before)
+            ).rowcount
 
     def _send(self, query: Select[tuple[OutboxRow]]) -> int:
         sent = 0
         with Session(self._engine) as session, session.begin():
             for row in session.scalars(query).all():
                 try:
-                    self._sender.send(row.event_type, encode(row.event_type, row.payload))
+                    self._sender.send(
+                        row.event_type, encode(row.event_type, row.payload)
+                    )
                 except Exception:
-                    logger.exception("sending event %s failed; the next sweep retries it", row.event_id)
+                    logger.exception(
+                        "sending event %s failed; the next sweep retries it",
+                        row.event_id,
+                    )
                     continue
                 row.sent_at = datetime.now(UTC)
                 sent += 1
@@ -53,4 +67,8 @@ class OutboxRelay:
 
 def _pending() -> Select[tuple[OutboxRow]]:
     # Locked rows belong to another relay or sweep, which will send them
-    return select(OutboxRow).where(OutboxRow.sent_at.is_(None)).with_for_update(skip_locked=True)
+    return (
+        select(OutboxRow)
+        .where(OutboxRow.sent_at.is_(None))
+        .with_for_update(skip_locked=True)
+    )

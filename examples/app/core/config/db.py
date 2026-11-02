@@ -1,6 +1,13 @@
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, FilePath, SecretStr, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    FilePath,
+    SecretStr,
+    model_validator,
+)
 
 from app.core.config.db_iam import IamAuth
 
@@ -25,7 +32,9 @@ class DbSettings(BaseModel):
     name: str
     auth: DbAuth
 
-    sslmode: Literal["disable", "require", "verify-ca", "verify-full"] = "verify-full"
+    sslmode: Literal["disable", "require", "verify-ca", "verify-full"] = (
+        "verify-full"
+    )
     sslrootcert: FilePath | None = None
 
     pool_size: int = Field(default=5, gt=0)
@@ -38,5 +47,7 @@ class DbSettings(BaseModel):
     @model_validator(mode="after")
     def check_tls(self) -> Self:
         if self.sslmode.startswith("verify") and self.sslrootcert is None:
-            raise ValueError("sslrootcert is required when sslmode verifies the certificate")
+            raise ValueError(
+                "sslrootcert is required when sslmode verifies the certificate"
+            )
         return self

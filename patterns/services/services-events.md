@@ -96,7 +96,9 @@ class DeactivateUser:
     user_id: int
 
 
-def deactivate_user(command: DeactivateUser, users: UserRepository, events: EventPublisher) -> None:
+def deactivate_user(
+    command: DeactivateUser, users: UserRepository, events: EventPublisher
+) -> None:
     user = users.get(command.user_id)
     if user is None:
         raise UserNotFound(command.user_id)
@@ -129,7 +131,12 @@ class UnitOfWork:
         self.events = OutboxPublisher(self.session)
         return self
 
-    def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
         with self.session:
             if exc_type is not None:
                 self.session.rollback()
@@ -190,7 +197,9 @@ class MessageSender(Protocol):
 
 
 class OutboxRelay:
-    def __init__(self, engine: Engine, sender: MessageSender, batch_size: int = 100) -> None:
+    def __init__(
+        self, engine: Engine, sender: MessageSender, batch_size: int = 100
+    ) -> None:
         self._engine = engine
         self._sender = sender
         self._batch_size = batch_size
@@ -201,23 +210,35 @@ class OutboxRelay:
         try:
             self._send(_pending().where(OutboxRow.event_id.in_(event_ids)))
         except Exception:
-            logger.exception("relay of %d events failed; the sweeper will send them", len(event_ids))
+            logger.exception(
+                "relay of %d events failed; the sweeper will send them",
+                len(event_ids),
+            )
 
     def sweep(self) -> int:
-        return self._send(_pending().order_by(OutboxRow.created_at).limit(self._batch_size))
+        return self._send(
+            _pending().order_by(OutboxRow.created_at).limit(self._batch_size)
+        )
 
     def purge(self, sent_before: datetime) -> int:
         with Session(self._engine) as session, session.begin():
-            return session.execute(delete(OutboxRow).where(OutboxRow.sent_at < sent_before)).rowcount
+            return session.execute(
+                delete(OutboxRow).where(OutboxRow.sent_at < sent_before)
+            ).rowcount
 
     def _send(self, query: Select[tuple[OutboxRow]]) -> int:
         sent = 0
         with Session(self._engine) as session, session.begin():
             for row in session.scalars(query).all():
                 try:
-                    self._sender.send(row.event_type, encode(row.event_type, row.payload))
+                    self._sender.send(
+                        row.event_type, encode(row.event_type, row.payload)
+                    )
                 except Exception:
-                    logger.exception("sending event %s failed; the next sweep retries it", row.event_id)
+                    logger.exception(
+                        "sending event %s failed; the next sweep retries it",
+                        row.event_id,
+                    )
                     continue
                 row.sent_at = datetime.now(UTC)
                 sent += 1
@@ -226,7 +247,11 @@ class OutboxRelay:
 
 def _pending() -> Select[tuple[OutboxRow]]:
     # Locked rows belong to another relay or sweep, which will send them
-    return select(OutboxRow).where(OutboxRow.sent_at.is_(None)).with_for_update(skip_locked=True)
+    return (
+        select(OutboxRow)
+        .where(OutboxRow.sent_at.is_(None))
+        .with_for_update(skip_locked=True)
+    )
 ```
 
 ```python
@@ -248,12 +273,17 @@ class SnsSender:
         self._client.publish(
             TopicArn=self._topic_arn,
             Message=body,
-            MessageAttributes={"event_type": {"DataType": "String", "StringValue": event_type}},
+            MessageAttributes={
+                "event_type": {"DataType": "String", "StringValue": event_type}
+            },
         )
 
 
 def build_sns_sender(events: EventsSettings) -> SnsSender:
-    return SnsSender(events.topic_arn, boto3.client("sns", region_name=events.region, config=CLIENT_CONFIG))
+    return SnsSender(
+        events.topic_arn,
+        boto3.client("sns", region_name=events.region, config=CLIENT_CONFIG),
+    )
 ```
 
 The topic comes from settings; the region is read from its ARN:
@@ -292,7 +322,9 @@ def get_unit_of_work(request: Request) -> Iterator[UnitOfWork]:
         yield uow
 
 
-UnitOfWorkDep = Annotated[UnitOfWork, Depends(get_unit_of_work, scope="function")]
+UnitOfWorkDep = Annotated[
+    UnitOfWork, Depends(get_unit_of_work, scope="function")
+]
 ```
 
 Each subscribing service has its own consumer. It decodes the message, skips an event it already processed, and runs the handlers in one unit of work. A failure is reported as a batch item failure, so SQS retries only that message. `purge()` deletes this consumer's records older than a cutoff:
@@ -325,30 +357,41 @@ class EventConsumer:
         self._engine = engine
         self._relay = relay
         self._types: dict[str, type[DomainEvent]] = {}
-        self._handlers: dict[type[DomainEvent], list[Handler]] = defaultdict(list)
+        self._handlers: dict[type[DomainEvent], list[Handler]] = defaultdict(
+            list
+        )
 
     @property
     def event_names(self) -> list[str]:
         return sorted(self._types)
 
-    def subscribe[E: DomainEvent](self, event_type: type[E], handler: Handler[E]) -> None:
+    def subscribe[E: DomainEvent](
+        self, event_type: type[E], handler: Handler[E]
+    ) -> None:
         self._types[event_name(event_type)] = event_type
         self._handlers[event_type].append(handler)
 
-    def handle(self, sqs_event: dict[str, Any]) -> dict[str, list[dict[str, str]]]:
+    def handle(
+        self, sqs_event: dict[str, Any]
+    ) -> dict[str, list[dict[str, str]]]:
         failures = []
         for record in sqs_event["Records"]:
             try:
                 self._handle(record["body"])
             except Exception:
-                logger.exception("%s failed to handle message %s", self.name, record["messageId"])
+                logger.exception(
+                    "%s failed to handle message %s",
+                    self.name,
+                    record["messageId"],
+                )
                 failures.append({"itemIdentifier": record["messageId"]})
         return {"batchItemFailures": failures}
 
     def purge(self, processed_before: datetime) -> int:
         with Session(self._engine) as session, session.begin():
             query = delete(ProcessedEventRow).where(
-                ProcessedEventRow.consumer == self.name, ProcessedEventRow.processed_at < processed_before
+                ProcessedEventRow.consumer == self.name,
+                ProcessedEventRow.processed_at < processed_before,
             )
             return session.execute(query).rowcount
 
@@ -356,13 +399,27 @@ class EventConsumer:
         name, payload = decode(body)
         event_type = self._types.get(name)
         if event_type is None:
-            logger.warning("%s has no handler for %s; check the subscription's filter policy", self.name, name)
+            logger.warning(
+                "%s has no handler for %s; "
+                "check the subscription's filter policy",
+                self.name,
+                name,
+            )
             return
         event = from_payload(event_type, payload)
         with UnitOfWork(self._engine, self._relay) as uow:
-            if uow.session.get(ProcessedEventRow, (event.event_id, self.name)) is not None:
+            if (
+                uow.session.get(ProcessedEventRow, (event.event_id, self.name))
+                is not None
+            ):
                 return
-            uow.session.add(ProcessedEventRow(event_id=event.event_id, consumer=self.name, processed_at=datetime.now(UTC)))
+            uow.session.add(
+                ProcessedEventRow(
+                    event_id=event.event_id,
+                    consumer=self.name,
+                    processed_at=datetime.now(UTC),
+                )
+            )
             for handler in self._handlers[event_type]:
                 handler(event, uow)
 ```
@@ -374,18 +431,25 @@ The subscriber's `event_handlers/` is an entry point like `api/`: it builds the 
 from app.core.db.unit_of_work import UnitOfWork
 from app.services import users
 from app.services.orders.infrastructure.repositories import SqlOrderRepository
-from app.services.orders.use_cases.cancel_open_orders import CancelOpenOrders, cancel_open_orders
+from app.services.orders.use_cases.cancel_open_orders import (
+    CancelOpenOrders,
+    cancel_open_orders,
+)
 
 
 def on_user_deactivated(event: users.UserDeactivated, uow: UnitOfWork) -> None:
-    cancel_open_orders(CancelOpenOrders(user_id=event.user_id), SqlOrderRepository(uow.session))
+    cancel_open_orders(
+        CancelOpenOrders(user_id=event.user_id), SqlOrderRepository(uow.session)
+    )
 ```
 
 ```python
 # app/services/orders/event_handlers/__init__.py
 from app.core.events.consumer import EventConsumer
 from app.services import users
-from app.services.orders.event_handlers.user_deactivated import on_user_deactivated
+from app.services.orders.event_handlers.user_deactivated import (
+    on_user_deactivated,
+)
 
 
 def register(consumer: EventConsumer) -> None:
@@ -419,19 +483,30 @@ class Workers:
 def create_workers() -> Workers:
     settings = get_settings()
     configure_logging(settings.log)
-    # A Lambda instance handles one event at a time: one connection, kept warm between invocations
+    # A Lambda instance handles one event at a time:
+    # one connection, kept warm between invocations
     db = settings.db.model_copy(update={"pool_size": 1, "max_overflow": 0})
     engine = build_engine(db, application_name=f"{settings.app.name}-workers")
-    relay = OutboxRelay(engine, build_sns_sender(settings.events), settings.events.sweep_batch_size)
+    relay = OutboxRelay(
+        engine,
+        build_sns_sender(settings.events),
+        settings.events.sweep_batch_size,
+    )
     orders = EventConsumer("orders", engine, relay)
     orders_handlers.register(orders)
-    return Workers(relay=relay, orders=orders, retention=timedelta(days=settings.events.retention_days))
+    return Workers(
+        relay=relay,
+        orders=orders,
+        retention=timedelta(days=settings.events.retention_days),
+    )
 
 
 workers = create_workers()
 
 
-def handle_orders_events(event: dict[str, Any], context: Any) -> dict[str, list[dict[str, str]]]:
+def handle_orders_events(
+    event: dict[str, Any], context: Any
+) -> dict[str, list[dict[str, str]]]:
     return workers.orders.handle(event)
 
 
@@ -441,7 +516,10 @@ def sweep_outbox(event: dict[str, Any], context: Any) -> dict[str, int]:
 
 def purge_events(event: dict[str, Any], context: Any) -> dict[str, int]:
     cutoff = datetime.now(UTC) - workers.retention
-    return {"outbox": workers.relay.purge(cutoff), "orders": workers.orders.purge(cutoff)}
+    return {
+        "outbox": workers.relay.purge(cutoff),
+        "orders": workers.orders.purge(cutoff),
+    }
 ```
 
 Infrastructure, one set per subscribing service:

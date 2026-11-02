@@ -15,7 +15,9 @@ def outbox(engine) -> list[OutboxRow]:
         return list(session.scalars(select(OutboxRow)))
 
 
-def test_event_is_stored_with_the_change_and_sent_after_commit(engine, relay, sender):
+def test_event_is_stored_with_the_change_and_sent_after_commit(
+    engine, relay, sender
+):
     with UnitOfWork(engine, relay) as uow:
         uow.events.publish(UserDeactivated(user_id=1))
         assert sender.sent == []
@@ -33,13 +35,20 @@ def test_rollback_stores_and_sends_nothing(engine, relay, sender):
     assert outbox(engine) == [] and sender.sent == []
 
 
-def test_failed_send_keeps_the_change_and_the_sweeper_sends_it(engine, relay, sender, monkeypatch):
+def test_failed_send_keeps_the_change_and_the_sweeper_sends_it(
+    engine, relay, sender, monkeypatch
+):
     def unreachable(event_type, body):
         raise ConnectionError("SNS unreachable")
 
     monkeypatch.setattr(sender, "send", unreachable)
     with UnitOfWork(engine, relay) as uow:
-        uow.session.execute(text("INSERT INTO users (name, status, version) VALUES ('ann', 'deactivated', 1)"))
+        uow.session.execute(
+            text(
+                "INSERT INTO users (name, status, version) "
+                "VALUES ('ann', 'deactivated', 1)"
+            )
+        )
         uow.events.publish(UserDeactivated(user_id=1))
     with engine.connect() as conn:
         assert conn.scalar(text("SELECT count(*) FROM users")) == 1
@@ -51,7 +60,9 @@ def test_failed_send_keeps_the_change_and_the_sweeper_sends_it(engine, relay, se
     assert relay.sweep() == 0
 
 
-def test_one_failing_event_doesnt_hold_back_the_others(engine, relay, sender, monkeypatch):
+def test_one_failing_event_doesnt_hold_back_the_others(
+    engine, relay, sender, monkeypatch
+):
     poison = UserDeactivated(user_id=1)
     send = sender.send
 
@@ -64,12 +75,18 @@ def test_one_failing_event_doesnt_hold_back_the_others(engine, relay, sender, mo
     with UnitOfWork(engine, relay) as uow:
         uow.events.publish(poison)
         uow.events.publish(UserDeactivated(user_id=2))
-    assert [json.loads(body)["payload"]["user_id"] for _, body in sender.sent] == [2]
+    assert [
+        json.loads(body)["payload"]["user_id"] for _, body in sender.sent
+    ] == [2]
     assert relay.sweep() == 0
-    assert [row.event_id for row in outbox(engine) if row.sent_at is None] == [poison.event_id]
+    assert [row.event_id for row in outbox(engine) if row.sent_at is None] == [
+        poison.event_id
+    ]
 
 
-def test_purge_deletes_only_rows_sent_before_the_cutoff(engine, relay, sender, monkeypatch):
+def test_purge_deletes_only_rows_sent_before_the_cutoff(
+    engine, relay, sender, monkeypatch
+):
     with UnitOfWork(engine, relay) as uow:
         uow.events.publish(UserDeactivated(user_id=1))
 

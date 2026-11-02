@@ -1,6 +1,8 @@
 from app.core.events.consumer import EventConsumer
 from app.services import users
-from app.services.orders.event_handlers.user_deactivated import on_user_deactivated
+from app.services.orders.event_handlers.user_deactivated import (
+    on_user_deactivated,
+)
 
 
 def register(consumer: EventConsumer) -> None:

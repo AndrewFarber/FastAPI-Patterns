@@ -12,4 +12,8 @@ def test_is_active_applies_the_users_rule(engine):
         bob.deactivate()
         repo.save(bob)
         api = users.UsersApi(session)
-        assert api.is_active(ann.id) and not api.is_active(bob.id) and not api.is_active(999)
+        assert (
+            api.is_active(ann.id)
+            and not api.is_active(bob.id)
+            and not api.is_active(999)
+        )

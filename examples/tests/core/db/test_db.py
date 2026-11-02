@@ -8,7 +8,9 @@ LOCAL = dict(host="localhost", user="app", name="shop", sslmode="disable")
 
 
 def test_password_auth_url_is_escaped_and_masked():
-    db = DbSettings(**LOCAL, auth={"method": "password", "password": "p@ss/word"})
+    db = DbSettings(
+        **LOCAL, auth={"method": "password", "password": "p@ss/word"}
+    )
     assert isinstance(db.auth, PasswordAuth)
     assert build_engine(db, "shop-api").url.password == "p@ss/word"
     assert "p@ss" not in repr(db)
@@ -16,7 +18,10 @@ def test_password_auth_url_is_escaped_and_masked():
 
 def test_auth_method_selects_model():
     with pytest.raises(ValidationError, match="password"):
-        DbSettings(**LOCAL, auth={"method": "iam", "region": "us-east-1", "password": "x"})
+        DbSettings(
+            **LOCAL,
+            auth={"method": "iam", "region": "us-east-1", "password": "x"},
+        )
     with pytest.raises(ValidationError):
         DbSettings(**LOCAL, auth={"password": "x"})
 
@@ -30,15 +35,38 @@ def ca_bundle(tmp_path):
 
 def test_verify_full_needs_a_ca():
     with pytest.raises(ValidationError, match="sslrootcert"):
-        DbSettings(host="h", user="u", name="n", auth={"method": "password", "password": "p"})
+        DbSettings(
+            host="h",
+            user="u",
+            name="n",
+            auth={"method": "password", "password": "p"},
+        )
     with pytest.raises(ValidationError):
-        DbSettings(host="h", user="u", name="n", sslrootcert="/no/such.pem", auth={"method": "password", "password": "p"})
+        DbSettings(
+            host="h",
+            user="u",
+            name="n",
+            sslrootcert="/no/such.pem",
+            auth={"method": "password", "password": "p"},
+        )
     with pytest.raises(ValidationError):
-        DbSettings(host="h", user="u", name="n", sslrootcert="system", auth={"method": "password", "password": "p"})
+        DbSettings(
+            host="h",
+            user="u",
+            name="n",
+            sslrootcert="system",
+            auth={"method": "password", "password": "p"},
+        )
 
 
 def test_connect_args(ca_bundle):
-    db = DbSettings(host="h", user="u", name="n", sslrootcert=ca_bundle, auth={"method": "password", "password": "p"})
+    db = DbSettings(
+        host="h",
+        user="u",
+        name="n",
+        sslrootcert=ca_bundle,
+        auth={"method": "password", "password": "p"},
+    )
     assert connect_args(db, "shop-api") == {
         "sslmode": "verify-full",
         "connect_timeout": 10,
@@ -64,4 +92,7 @@ def test_iam_token_per_connection(ca_bundle):
 
 def test_iam_requires_tls():
     with pytest.raises(ValueError, match="requires TLS"):
-        build_engine(DbSettings(**LOCAL, auth={"method": "iam", "region": "us-east-1"}), "shop-api")
+        build_engine(
+            DbSettings(**LOCAL, auth={"method": "iam", "region": "us-east-1"}),
+            "shop-api",
+        )

@@ -12,7 +12,10 @@ from app.services.users import UserDeactivated
 
 
 def record(event, message_id="m1") -> dict:
-    return {"messageId": message_id, "body": encode(event_name(type(event)), to_payload(event))}
+    return {
+        "messageId": message_id,
+        "body": encode(event_name(type(event)), to_payload(event)),
+    }
 
 
 @pytest.fixture
@@ -22,9 +25,13 @@ def consumer(engine, relay) -> EventConsumer:
 
 def test_handles_each_event_once(consumer):
     seen = []
-    consumer.subscribe(UserDeactivated, lambda event, uow: seen.append(event.user_id))
+    consumer.subscribe(
+        UserDeactivated, lambda event, uow: seen.append(event.user_id)
+    )
     event = UserDeactivated(user_id=1)
-    assert consumer.handle({"Records": [record(event, "m1"), record(event, "m2")]}) == {"batchItemFailures": []}
+    assert consumer.handle(
+        {"Records": [record(event, "m1"), record(event, "m2")]}
+    ) == {"batchItemFailures": []}
     assert seen == [1]
 
 
@@ -38,21 +45,32 @@ def test_failing_handler_reports_the_message_and_can_retry(consumer):
 
     consumer.subscribe(UserDeactivated, flaky)
     event = UserDeactivated(user_id=1)
-    assert consumer.handle({"Records": [record(event)]}) == {"batchItemFailures": [{"itemIdentifier": "m1"}]}
-    assert consumer.handle({"Records": [record(event)]}) == {"batchItemFailures": []}
+    assert consumer.handle({"Records": [record(event)]}) == {
+        "batchItemFailures": [{"itemIdentifier": "m1"}]
+    }
+    assert consumer.handle({"Records": [record(event)]}) == {
+        "batchItemFailures": []
+    }
     assert calls == [1, 1]
 
 
 def test_handlers_publish_through_their_own_outbox(consumer, engine, sender):
-    consumer.subscribe(UserDeactivated, lambda event, uow: uow.events.publish(UserDeactivated(user_id=2)))
+    consumer.subscribe(
+        UserDeactivated,
+        lambda event, uow: uow.events.publish(UserDeactivated(user_id=2)),
+    )
     consumer.handle({"Records": [record(UserDeactivated(user_id=1))]})
     with Session(engine) as session:
-        assert [row.payload["user_id"] for row in session.scalars(select(OutboxRow))] == [2]
+        assert [
+            row.payload["user_id"] for row in session.scalars(select(OutboxRow))
+        ] == [2]
     assert len(sender.sent) == 1
 
 
 def test_unsubscribed_event_is_acknowledged(consumer):
-    assert consumer.handle({"Records": [record(UserDeactivated(user_id=1))]}) == {"batchItemFailures": []}
+    assert consumer.handle(
+        {"Records": [record(UserDeactivated(user_id=1))]}
+    ) == {"batchItemFailures": []}
 
 
 def test_purge_deletes_only_this_consumers_old_records(consumer, engine, relay):
@@ -66,4 +84,6 @@ def test_purge_deletes_only_this_consumers_old_records(consumer, engine, relay):
     assert consumer.purge(datetime.now(UTC) - timedelta(days=1)) == 0
     assert consumer.purge(datetime.now(UTC) + timedelta(seconds=1)) == 1
     with Session(engine) as session:
-        assert [row.consumer for row in session.scalars(select(ProcessedEventRow))] == ["billing"]
+        assert [
+            row.consumer for row in session.scalars(select(ProcessedEventRow))
+        ] == ["billing"]

@@ -63,10 +63,19 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings = get_settings()
-    app.state.engine = build_engine(settings.db, application_name=settings.app.name)
-    app.state.relay = OutboxRelay(app.state.engine, build_sns_sender(settings.events), settings.events.sweep_batch_size)
-    app.state.parameters = parameter_store_cache(settings.switches.region, settings.switches.ttl_seconds)
-    app.state.parameters.get(settings.switches.orders_paused)  # a missing parameter fails startup, not every order
+    app.state.engine = build_engine(
+        settings.db, application_name=settings.app.name
+    )
+    app.state.relay = OutboxRelay(
+        app.state.engine,
+        build_sns_sender(settings.events),
+        settings.events.sweep_batch_size,
+    )
+    app.state.parameters = parameter_store_cache(
+        settings.switches.region, settings.switches.ttl_seconds
+    )
+    # A missing parameter fails startup, not every order
+    app.state.parameters.get(settings.switches.orders_paused)
     yield
     app.state.engine.dispose()
 
@@ -76,7 +85,9 @@ def create_app() -> FastAPI:
     configure_logging(settings.log)
     logger.info("settings loaded: %s", settings.model_dump_json())
 
-    app = FastAPI(title=settings.app.name, debug=settings.app.debug, lifespan=lifespan)
+    app = FastAPI(
+        title=settings.app.name, debug=settings.app.debug, lifespan=lifespan
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors.allow_origins,

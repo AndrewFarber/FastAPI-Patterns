@@ -7,7 +7,9 @@ from app.core.cache.ttl_cache import TtlCache
 
 def test_ttl_cache_caches_and_expires():
     calls = []
-    cache = TtlCache(lambda key: calls.append(key) or f"v{len(calls)}", ttl_seconds=0.05)
+    cache = TtlCache(
+        lambda key: calls.append(key) or f"v{len(calls)}", ttl_seconds=0.05
+    )
     assert cache.get("a") == "v1" and cache.get("a") == "v1"
     time.sleep(0.06)
     assert cache.get("a") == "v2"

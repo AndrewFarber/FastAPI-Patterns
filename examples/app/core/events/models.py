@@ -13,4 +13,6 @@ class ProcessedEventRow(Base):
 
     event_id: Mapped[UUID] = mapped_column(primary_key=True)
     consumer: Mapped[str] = mapped_column(String(100), primary_key=True)
-    processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    processed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), index=True
+    )

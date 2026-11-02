@@ -11,7 +11,9 @@ class DeactivateUser:
     user_id: int
 
 
-def deactivate_user(command: DeactivateUser, users: UserRepository, events: EventPublisher) -> None:
+def deactivate_user(
+    command: DeactivateUser, users: UserRepository, events: EventPublisher
+) -> None:
     user = users.get(command.user_id)
     if user is None:
         raise UserNotFound(command.user_id)

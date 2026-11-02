@@ -33,5 +33,16 @@ def connect_args(db: DbSettings, application_name: str) -> dict[str, str | int]:
 
 
 def _url(db: DbSettings) -> URL:
-    password = db.auth.password.get_secret_value() if isinstance(db.auth, PasswordAuth) else None
-    return URL.create(db.scheme, username=db.user, password=password, host=db.host, port=db.port, database=db.name)
+    password = (
+        db.auth.password.get_secret_value()
+        if isinstance(db.auth, PasswordAuth)
+        else None
+    )
+    return URL.create(
+        db.scheme,
+        username=db.user,
+        password=password,
+        host=db.host,
+        port=db.port,
+        database=db.name,
+    )

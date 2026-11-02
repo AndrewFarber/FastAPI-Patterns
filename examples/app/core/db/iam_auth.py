@@ -12,4 +12,9 @@ def add_iam_token(engine: Engine, db: DbSettings, auth: IamAuth) -> None:
 
     @event.listens_for(engine, "do_connect")
     def provide_token(dialect, conn_rec, cargs, cparams):
-        cparams["password"] = rds.generate_db_auth_token(DBHostname=db.host, Port=db.port, DBUsername=db.user, Region=auth.region)
+        cparams["password"] = rds.generate_db_auth_token(
+            DBHostname=db.host,
+            Port=db.port,
+            DBUsername=db.user,
+            Region=auth.region,
+        )

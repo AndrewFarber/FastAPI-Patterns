@@ -44,7 +44,9 @@ class Settings(BaseSettings):
             if "*" in self.cors.allow_origins:
                 raise ValueError("wildcard CORS origin is not allowed in prod")
             if isinstance(self.db.auth, PasswordAuth):
-                raise ValueError("password DB auth is for local use; prod uses iam")
+                raise ValueError(
+                    "password DB auth is for local use; prod uses iam"
+                )
         return self
 
     @classmethod
@@ -59,9 +61,13 @@ class Settings(BaseSettings):
         sources = [init_settings, env_settings]
 
         if secret_id := os.environ.get("AWS_SECRETS_MANAGER_SECRET_ID"):
-            sources.append(AWSSecretsManagerSettingsSource(settings_cls, secret_id))
+            sources.append(
+                AWSSecretsManagerSettingsSource(settings_cls, secret_id)
+            )
         if ssm_path := os.environ.get("AWS_SSM_PATH"):
-            sources.append(AWSSystemsManagerSettingsSource(settings_cls, ssm_path))
+            sources.append(
+                AWSSystemsManagerSettingsSource(settings_cls, ssm_path)
+            )
 
         return tuple(sources)
 

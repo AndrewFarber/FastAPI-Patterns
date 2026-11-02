@@ -28,7 +28,14 @@ Store connection *parts*, not a URL, with authentication as a discriminated unio
 # app/core/config/db.py
 from typing import Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, FilePath, SecretStr, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    FilePath,
+    SecretStr,
+    model_validator,
+)
 
 from app.core.config.db_iam import IamAuth
 
@@ -53,7 +60,9 @@ class DbSettings(BaseModel):
     name: str
     auth: DbAuth
 
-    sslmode: Literal["disable", "require", "verify-ca", "verify-full"] = "verify-full"
+    sslmode: Literal["disable", "require", "verify-ca", "verify-full"] = (
+        "verify-full"
+    )
     sslrootcert: FilePath | None = None
 
     pool_size: int = Field(default=5, gt=0)
@@ -66,7 +75,9 @@ class DbSettings(BaseModel):
     @model_validator(mode="after")
     def check_tls(self) -> Self:
         if self.sslmode.startswith("verify") and self.sslrootcert is None:
-            raise ValueError("sslrootcert is required when sslmode verifies the certificate")
+            raise ValueError(
+                "sslrootcert is required when sslmode verifies the certificate"
+            )
         return self
 ```
 
@@ -107,8 +118,19 @@ def connect_args(db: DbSettings, application_name: str) -> dict[str, str | int]:
 
 
 def _url(db: DbSettings) -> URL:
-    password = db.auth.password.get_secret_value() if isinstance(db.auth, PasswordAuth) else None
-    return URL.create(db.scheme, username=db.user, password=password, host=db.host, port=db.port, database=db.name)
+    password = (
+        db.auth.password.get_secret_value()
+        if isinstance(db.auth, PasswordAuth)
+        else None
+    )
+    return URL.create(
+        db.scheme,
+        username=db.user,
+        password=password,
+        host=db.host,
+        port=db.port,
+        database=db.name,
+    )
 ```
 
 The engine is built once in the lifespan and disposed on shutdown ([[settings-access]]).
