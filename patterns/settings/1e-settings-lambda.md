@@ -27,21 +27,13 @@ LWA is a Lambda extension copied into the image. At init it starts alongside the
 # syntax=docker/dockerfile:1
 # Build from examples/ (the lockfile lives there):
 #   docker build -f settings/Dockerfile --build-arg VERSION=... --build-arg GIT_SHA=... --build-arg BUILD_TIME=... .
-
-# AppConfig Agent Lambda extension (runtime flags on localhost:2772). Download the layer
-# zip first, see 2f-settings-feature-flags-appconfig
-FROM public.ecr.aws/docker/library/python:3.14-slim AS appconfig-extension
-RUN apt-get update && apt-get install -y --no-install-recommends unzip   # keeps the binaries' exec bits
-COPY settings/appconfig-extension.zip /tmp/
-RUN unzip /tmp/appconfig-extension.zip -d /opt
-
-FROM public.ecr.aws/docker/library/python:3.14-slim
-# COPY merges into /opt: the agent lands next to the Lambda Web Adapter in /opt/extensions
-COPY --from=appconfig-extension /opt /opt
+# Images are pinned by digest: a tag can be moved to a different image. The tag stays for
+# readers and update tools (Renovate, Dependabot), which bump tag and digest together.
+FROM public.ecr.aws/docker/library/python:3.14-slim@sha256:930e1abba7c4e8f96ed93e8012c35d174d7732752731bbd5e8e757d7ec6f3966
 
 # Lambda Web Adapter: a Lambda extension that starts with the container, waits until
 # the readiness path answers, then turns each invocation into an HTTP request to uvicorn
-COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.1.0 /lambda-adapter /opt/extensions/lambda-adapter
+COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.1.0@sha256:17cfd08eff1dfea3f6a9a1e9c65fdac80aa4919b6085e746615530f43f57d2f1 /lambda-adapter /opt/extensions/lambda-adapter
 ENV AWS_LWA_PORT=8080 \
     AWS_LWA_READINESS_CHECK_PATH=/healthz \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -60,12 +52,13 @@ RUN cat /tmp/amazon-roots/*.pem > /etc/ssl/certs/amazon-root-cas.pem && rm -r /t
 
 # Dependencies from the lockfile, compiled at build time: the image's filesystem is read-only
 # at run time (only /tmp is writable), and compiling at init would slow every cold start
-COPY --from=ghcr.io/astral-sh/uv:0.13.5 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.13.5@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff /uv /usr/local/bin/uv
 WORKDIR /var/task
 COPY pyproject.toml uv.lock ./
 RUN UV_COMPILE_BYTECODE=1 uv sync --frozen --no-dev --no-install-project
 ENV PATH="/var/task/.venv/bin:$PATH"
 COPY settings/app ./app
+RUN python -m compileall -q app   # the app's own modules too: uv sync compiled only the dependencies
 
 # Build metadata last: these values change every build, so the layers above stay cached.
 # An empty value would fail settings validation at init; fail the build instead.
@@ -80,7 +73,7 @@ ENV APP__VERSION=$VERSION \
 CMD ["uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8080"]
 ```
 
-The image carries two extensions in `/opt/extensions`: LWA and the AppConfig agent ([[2f-settings-feature-flags-appconfig]]), whose layer zip must be downloaded before `docker build`. The function is deployed from this image, with a `live` alias, a Function URL on that alias, and a CodeDeploy deployment group that shifts the alias ([[1d-settings-deployments]]).
+The image carries LWA in `/opt/extensions`; other extensions go next to it, such as the AppConfig agent for runtime flags ([[2f-settings-feature-flags-appconfig]]). The function is deployed from this image, with a `live` alias, a Function URL on that alias, and a CodeDeploy deployment group that shifts the alias ([[1d-settings-deployments]]).
 
 ### Init, invoke, shutdown
 | Phase | What runs | Settings consequence |

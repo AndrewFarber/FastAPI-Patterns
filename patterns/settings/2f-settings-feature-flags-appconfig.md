@@ -30,17 +30,20 @@ aws lambda get-layer-version-by-arn \
 ```
 
 ```dockerfile
-# Dockerfile (fragment)
+# Dockerfile (fragment): additions to the Dockerfile in 1e-settings-lambda
+# A new first stage that unpacks the layer. Pin the image by digest, like the others
 FROM public.ecr.aws/docker/library/python:3.14-slim AS appconfig-extension
 RUN apt-get update && apt-get install -y --no-install-recommends unzip   # keeps the binaries' exec bits
 COPY settings/appconfig-extension.zip /tmp/
 RUN unzip /tmp/appconfig-extension.zip -d /opt
 
-FROM public.ecr.aws/docker/library/python:3.14-slim
+# In the final stage, right after its FROM
 # COPY merges into /opt: the agent lands next to the Lambda Web Adapter in /opt/extensions
 COPY --from=appconfig-extension /opt /opt
-COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.1.0 /lambda-adapter /opt/extensions/lambda-adapter
 ```
+
+- **Not in the example image.** The vault's Dockerfile leaves the agent out, so building it needs no AWS download; `AppConfigFlags` is tested against a fake agent instead.
+- **Git-ignore the zip:** it is a downloaded binary, fetched again for each build.
 
 ### Point the function at it
 ```bash

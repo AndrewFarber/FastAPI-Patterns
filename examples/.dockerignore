@@ -1,0 +1,5 @@
+# Build context is examples/: send only what settings/Dockerfile copies, not the local venv (~450 MB)
+.venv/
+**/__pycache__/
+**/.pytest_cache/
+.ruff_cache/
