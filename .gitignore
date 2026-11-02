@@ -1,0 +1,17 @@
+# Obsidian per-device state
+.obsidian/
+.trash/
+
+# Python
+__pycache__/
+.venv/
+.pytest_cache/
+
+# Personal planning
+TODO.md
+
+# Examples
+cdk.out/
+result
+# AppConfig Agent layer zip, downloaded before docker build (2f-settings-feature-flags-appconfig)
+examples/settings/appconfig-extension.zip
