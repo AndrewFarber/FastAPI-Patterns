@@ -77,7 +77,7 @@ class ServiceStack(Stack):
     def __init__(
         self, scope: Construct, id: str, *,
         vpc: ec2.IVpc, database: DatabaseStack, image_tag: str, auth_issuer: str, auth_audiences: list[str],
-        appconfig_environment: str,
+        appconfig_environment: str, is_prd: bool,
         **kwargs,
     ) -> None:
         super().__init__(scope, id, **kwargs)
@@ -93,6 +93,8 @@ class ServiceStack(Stack):
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS),
             environment={
                 # No secrets here: env vars are readable via GetFunctionConfiguration (4 KB total)
+                # Turns on the production checks in Settings (no debug, no wildcard CORS)
+                "APP__IS_PRD": "true" if is_prd else "false",
                 "DB__HOST": database.instance.db_instance_endpoint_address,
                 "DB__NAME": "orders",
                 "DB__USER": "orders_app",

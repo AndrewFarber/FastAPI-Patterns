@@ -15,6 +15,4 @@ def secrets_manager_cache(region: str, ttl_seconds: float) -> TtlCache:
 
 def parameter_store_cache(region: str, ttl_seconds: float) -> TtlCache:
     client = boto3.client("ssm", region_name=region, config=CLIENT_CONFIG)
-    return TtlCache(
-        lambda name: client.get_parameter(Name=name, WithDecryption=True)["Parameter"]["Value"], ttl_seconds
-    )
+    return TtlCache(lambda name: client.get_parameter(Name=name, WithDecryption=True)["Parameter"]["Value"], ttl_seconds)

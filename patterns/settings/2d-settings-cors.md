@@ -56,7 +56,7 @@ class CorsSettings(BaseModel):
 ```
 
 ```python
-# main.py (fragment: the full app/main.py is in 1b-settings-access)
+# app/main.py (fragment: the full file is in 1b-settings-access)
 # CORS is set here only: a Function URL CORS config would replace these headers
 app.add_middleware(
     CORSMiddleware,

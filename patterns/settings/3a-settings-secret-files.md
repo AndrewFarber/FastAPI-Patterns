@@ -22,7 +22,7 @@ Running the image locally with docker-compose needs a dev database password. As 
 Add the files source only when `SECRETS_DIR` is set, like the AWS sources in [[3b-settings-aws-sources-pydantic]]. Compose sets it; Lambda and tests don't.
 
 ```python
-# config/settings.py (fragment)
+# app/config/settings.py (fragment)
 import os
 
 from pydantic_settings import NestedSecretsSettingsSource, PydanticBaseSettingsSource

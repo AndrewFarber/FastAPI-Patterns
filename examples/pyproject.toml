@@ -2,7 +2,7 @@
 name = "fastapi-patterns-examples"
 version = "0.1.0"
 description = "Runnable, tested code shown in the FastAPI Patterns vault"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "boto3>=1.35",
     "cachetools>=5",
@@ -28,7 +28,7 @@ package = false
 
 [tool.ruff]
 line-length = 130
-target-version = "py312"
+target-version = "py313"
 src = ["settings"]
 
 [tool.ruff.lint]

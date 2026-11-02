@@ -18,7 +18,7 @@ def test_stacks_synthesize():
     database = DatabaseStack(app, "Database", vpc=vpc, env=env)
     service = ServiceStack(
         app, "Service", vpc=vpc, database=database, image_tag="1.4.2",
-        auth_issuer="https://issuer.test", auth_audiences=["client"], appconfig_environment="prd", env=env,
+        auth_issuer="https://issuer.test", auth_audiences=["client"], appconfig_environment="prd", is_prd=True, env=env,
     )
     app.synth()                                               # fails on dependency cycles
 
@@ -33,6 +33,7 @@ def test_stacks_synthesize():
     env_vars = function["Properties"]["Environment"]["Variables"]
     assert {"DB__AUTH__METHOD", "DB__AUTH__SECRET_ID", "DB__POOL_SIZE", "AUTH__ISSUER"} <= env_vars.keys()
     assert not any("PASSWORD" in name for name in env_vars)  # secrets are read at runtime, not set here
+    assert env_vars["APP__IS_PRD"] == "true"
     assert env_vars["FEATURES__RUNTIME_FLAGS__ENVIRONMENT"] == "prd"
     assert env_vars["AWS_APPCONFIG_EXTENSION_PREFETCH_LIST"] == (
         "/applications/orders-api/environments/prd/configurations/runtime-flags"

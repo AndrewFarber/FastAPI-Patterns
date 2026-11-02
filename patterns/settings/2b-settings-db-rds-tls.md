@@ -24,8 +24,11 @@ The image ships two bundles (the full Dockerfile is in [[1e-settings-lambda]]):
 
 ```dockerfile
 # Dockerfile (fragment)
-# Files added from a URL are mode 600, and Lambda runs the image as a non-root user
+# CA bundles for DB__SSLROOTCERT. Files added from a URL are mode 600, and Lambda
+# runs the image as a non-root user, so make them readable.
+# RDS instances: the RDS global bundle
 ADD --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/certs/rds-global-bundle.pem
+# RDS Proxy: the Amazon Trust Services roots behind its ACM certificate, in one file
 ADD --chmod=644 https://www.amazontrust.com/repository/AmazonRootCA1.pem \
     https://www.amazontrust.com/repository/AmazonRootCA2.pem \
     https://www.amazontrust.com/repository/AmazonRootCA3.pem \

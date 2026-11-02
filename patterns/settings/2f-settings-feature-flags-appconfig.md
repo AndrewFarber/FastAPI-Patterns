@@ -46,14 +46,16 @@ COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.1.0 /lambda-adapter /opt
 ```python
 # infra/service_stack.py (fragment)
 environment={
-    # Where the app reads the flags: the AppConfig environment is named per stage
+    # Where the app reads the runtime flags: the AppConfig environment is named per stage
     "FEATURES__RUNTIME_FLAGS__APPLICATION": "orders-api",
     "FEATURES__RUNTIME_FLAGS__ENVIRONMENT": appconfig_environment,
     # The agent fetches these during its own init, before the app's, so the first read is a cache hit
-    "AWS_APPCONFIG_EXTENSION_PREFETCH_LIST": f"/applications/orders-api/environments/{appconfig_environment}/configurations/runtime-flags",
+    "AWS_APPCONFIG_EXTENSION_PREFETCH_LIST": (
+        f"/applications/orders-api/environments/{appconfig_environment}/configurations/runtime-flags"
+    ),
 },
 ...
-# The agent calls AppConfig with the function's role
+# The AppConfig agent extension calls AppConfig with the function's role
 self.function.add_to_role_policy(iam.PolicyStatement(
     actions=["appconfig:StartConfigurationSession", "appconfig:GetLatestConfiguration"],
     resources=[f"arn:{self.partition}:appconfig:{self.region}:{self.account}:application/*"],

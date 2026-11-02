@@ -188,7 +188,7 @@ Other ways values reach `Settings`: AWS Secrets Manager or Parameter Store, read
 - Env var names are case-insensitive; nested fields use the `__` delimiter. Source priority, highest first: init kwargs → environment variables → dotenv file → secret files → defaults. The dotenv and secret-file sources read nothing until `env_file` or `secrets_dir` is set ([[3a-settings-secret-files]]); this `Settings` sets neither.
 
 ## Pitfalls
-- **Reading `os.environ` directly** anywhere outside `config/`. All configuration goes through `Settings`.
+- **Reading `os.environ` directly** anywhere outside `config/`. All configuration goes through `Settings`. The exception is runtime metadata the platform sets, not configuration: `AWS_LAMBDA_FUNCTION_VERSION` in `app/observability.py` ([[1d-settings-deployments]]).
 - **Defaults for required values.** A default database host hides a missing env var until the app connects to the wrong place. No default means startup fails fast.
 - **Plain `str` for secrets.** Use `SecretStr` so values show as `**********` in logs, reprs, and tracebacks; call `.get_secret_value()` only where the raw value is needed.
 - **Unquoted JSON in shell commands.** `X=["a"]` reaches Python as `[a]`; quote it: `X='["a"]'`.

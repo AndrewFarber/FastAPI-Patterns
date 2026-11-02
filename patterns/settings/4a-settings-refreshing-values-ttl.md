@@ -23,7 +23,7 @@ Configuration in AWS changes occasionally, and the app should pick it up within 
 Replace `lru_cache` on `get_settings()` (approach 2 in [[1b-settings-access]]) with a TTL cache:
 
 ```python
-# config/settings.py (fragment)
+# app/config/settings.py (fragment)
 from cachetools.func import ttl_cache
 
 

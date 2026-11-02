@@ -60,7 +60,7 @@ def test_missing_secrets_dir_fails(test_env, monkeypatch):
 class AwsSettings(Settings):
     @classmethod
     def settings_customise_sources(cls, settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings):
-        sources = [init_settings, env_settings, file_secret_settings]
+        sources = [init_settings, env_settings]
         if secret_id := os.environ.get("AWS_SECRETS_MANAGER_SECRET_ID"):
             sources.append(AWSSecretsManagerSettingsSource(settings_cls, secret_id))
         if ssm_path := os.environ.get("AWS_SSM_PATH"):

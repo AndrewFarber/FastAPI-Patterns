@@ -78,7 +78,7 @@ class DeploymentFilter(logging.Filter):
 `create_app()` attaches it to the root handler, so records from every logger carry both fields ([[1a-settings-management]]):
 
 ```python
-# main.py (fragment)
+# app/main.py (fragment)
 configure_logging(settings.log, DeploymentFilter(settings.app))
 ```
 

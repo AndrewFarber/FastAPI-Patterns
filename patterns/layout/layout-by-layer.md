@@ -3,7 +3,7 @@ title: "Layout by layer"
 category: project-structure
 tags: [project-layout, layered-architecture]
 status: draft
-related: ["[[project-layout]]", "[[layout-by-feature]]", "[[layout-hexagonal]]", "[[1a-settings-management]]"]
+related: ["[[1a-settings-management]]"]
 ---
 
 # Layout by layer
@@ -17,16 +17,16 @@ Once an app outgrows a single file, code needs a predictable home. Without one, 
 - You want the structure most FastAPI tutorials and newcomers already recognize.
 
 ## Avoid when
-- The app has many domains (roughly 10+) or keeps adding them. See [[layout-by-feature]].
+- The app has many domains (roughly 10+) or keeps adding them: group code by feature instead (a separate note, not written yet).
 - Multiple teams own different features.
-- Business logic is complex and should be independent of FastAPI and the database. See [[layout-hexagonal]].
+- Business logic is complex and should be independent of FastAPI and the database: use a hexagonal layout (a separate note, not written yet).
 
 ## Solution
 
 ### Project root
 ```
 project/
-├── src/app/          application code (below)
+├── app/              application code (below)
 ├── tests/            mirrors the layers: tests/routers/, tests/services/, ...
 ├── migrations/       Alembic migration scripts
 ├── pyproject.toml
@@ -36,7 +36,7 @@ project/
 
 ### Application
 ```
-src/app/
+app/
 ├── main.py           only .py file at this level
 ├── config/
 ├── db/
@@ -77,7 +77,4 @@ src/app/
 - **Plumbing vs wiring:** `db/` and `security/` create things; `dependencies/` hands them to requests (`dependencies/db.py` yields a session from `db/session.py`, `dependencies/auth.py` uses `security/tokens.py`).
 
 ## Related
-- [[project-layout]]
-- [[layout-by-feature]]
-- [[layout-hexagonal]]
 - [[1a-settings-management]]
