@@ -14,7 +14,7 @@ One top-level folder per technical layer, with dependencies pointing one way. Ea
 - A small to medium app with a few domains, owned by one team.
 
 Not when:
-- Many domains or several teams: group by feature instead.
+- Many domains or several teams: use [[layout-by-domain]].
 
 ## Signals
 - **Feature:** "where should this go", "split up `main.py`".
