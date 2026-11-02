@@ -9,13 +9,13 @@ from pydantic import ValidationError
 from app.core.config.db import DbSettings, PasswordAuth
 from app.core.db.engine import build_engine
 
-LOCAL = dict(host="localhost", user="app", name="orders", sslmode="disable")
+LOCAL = dict(host="localhost", user="app", name="shop", sslmode="disable")
 
 
 def test_password_auth_url_is_escaped_and_masked():
     db = DbSettings(**LOCAL, auth={"method": "password", "password": "p@ss/word"})
     assert isinstance(db.auth, PasswordAuth)
-    assert build_engine(db, "orders-api").url.password == "p@ss/word"
+    assert build_engine(db, "shop-api").url.password == "p@ss/word"
     assert "p@ss" not in repr(db)
 
 
@@ -44,15 +44,15 @@ def test_verify_full_needs_a_ca():
 
 def test_connect_args(ca_bundle):
     db = DbSettings(host="h", user="u", name="n", sslrootcert=ca_bundle, auth={"method": "password", "password": "p"})
-    assert db.connect_args("orders-api") == {
-        "sslmode": "verify-full", "connect_timeout": 10, "application_name": "orders-api", "sslrootcert": str(ca_bundle),
+    assert db.connect_args("shop-api") == {
+        "sslmode": "verify-full", "connect_timeout": 10, "application_name": "shop-api", "sslrootcert": str(ca_bundle),
     }
 
 
 def test_iam_token_per_connection(ca_bundle):
-    db = DbSettings(host="orders.abc123.us-east-1.rds.amazonaws.com", user="orders_app", name="orders",
+    db = DbSettings(host="shop.abc123.us-east-1.rds.amazonaws.com", user="shop_app", name="shop",
                     sslrootcert=ca_bundle, auth={"method": "iam", "region": "us-east-1"})
-    engine = build_engine(db, "orders-api")
+    engine = build_engine(db, "shop-api")
     cparams = {}
     for listener in engine.dialect.dispatch.do_connect:
         listener(engine.dialect, None, [], cparams)
@@ -61,15 +61,15 @@ def test_iam_token_per_connection(ca_bundle):
 
 def test_iam_requires_tls():
     with pytest.raises(ValueError, match="requires TLS"):
-        build_engine(DbSettings(**LOCAL, auth={"method": "iam", "region": "us-east-1"}), "orders-api")
+        build_engine(DbSettings(**LOCAL, auth={"method": "iam", "region": "us-east-1"}), "shop-api")
 
 
 def test_rotated_password_retries_after_rotation(monkeypatch):
     with mock_aws():
         sm = boto3.client("secretsmanager")
-        sm.create_secret(Name="orders/prd/db-app", SecretString=json.dumps({"username": "orders_app", "password": "old"}))
-        db = DbSettings(**LOCAL, auth={"method": "rotated_secret", "secret_id": "orders/prd/db-app", "region": "us-east-1"})
-        engine = build_engine(db, "orders-api")
+        sm.create_secret(Name="shop/prd/db-app", SecretString=json.dumps({"username": "shop_app", "password": "old"}))
+        db = DbSettings(**LOCAL, auth={"method": "rotated_secret", "secret_id": "shop/prd/db-app", "region": "us-east-1"})
+        engine = build_engine(db, "shop-api")
         [listener] = list(engine.dialect.dispatch.do_connect)
 
         attempts = []
@@ -83,10 +83,10 @@ def test_rotated_password_retries_after_rotation(monkeypatch):
         monkeypatch.setattr(engine.dialect, "connect", fake_connect)
         with pytest.raises(psycopg.OperationalError):
             listener(engine.dialect, None, [], {})
-        assert attempts == [("orders_app", "old")]
-        sm.put_secret_value(SecretId="orders/prd/db-app",
-                            SecretString=json.dumps({"username": "orders_app_clone", "password": "new"}))
+        assert attempts == [("shop_app", "old")]
+        sm.put_secret_value(SecretId="shop/prd/db-app",
+                            SecretString=json.dumps({"username": "shop_app_clone", "password": "new"}))
         attempts.clear()
         assert listener(engine.dialect, None, [], {}) == "connection"
-        assert attempts == [("orders_app", "old"), ("orders_app_clone", "new")]
+        assert attempts == [("shop_app", "old"), ("shop_app_clone", "new")]
 

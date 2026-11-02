@@ -4,7 +4,7 @@ An Obsidian vault of FastAPI design patterns, also usable as a Claude Code skill
 
 ## Layout
 - `patterns/<topic>/`: the notes. Each topic folder has a `0-<topic>-guide` note listing its notes.
-- `examples/`: one runnable, tested app in the domain layout (`app/core/`, `app/shared/`, `app/services/`) that every topic's notes show.
+- `examples/`: one runnable, tested app, `shop-api`, in the domain layout: `app/core/`, `app/shared/`, and one package per domain in `app/services/` (`users`, `orders`). Every topic's notes show it.
 - `INDEX.md`: one line per topic, pointing to its guide, for Claude.
 
 ## Note names

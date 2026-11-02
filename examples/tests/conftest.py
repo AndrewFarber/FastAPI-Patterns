@@ -17,7 +17,7 @@ from app.services.users.infrastructure.models import UserRow
 
 TEST_VALUES: dict[str, dict[str, Any]] = {
     "db": {
-        "host": "localhost", "user": "test", "name": "orders_test", "sslmode": "disable",
+        "host": "localhost", "user": "test", "name": "shop_test", "sslmode": "disable",
         "auth": {"method": "password", "password": "test"},
     },
     "auth": {"issuer": "https://issuer.test", "audiences": ["test-client"]},

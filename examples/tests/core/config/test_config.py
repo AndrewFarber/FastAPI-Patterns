@@ -13,7 +13,7 @@ from conftest import TEST_VALUES, clear_settings_env, make_test_env
 
 def test_env_vars_load(test_env):
     s = get_settings()
-    assert s.db.name == "orders_test" and s.auth.audiences == ["test-client"]
+    assert s.db.name == "shop_test" and s.auth.audiences == ["test-client"]
 
 
 def test_make_test_env_encodes_json():

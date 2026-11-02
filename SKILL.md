@@ -37,6 +37,6 @@ When a chosen note offers options (e.g. three ways to access settings), settle t
 
 ## 5. Implement
 - Follow the note's **Pattern** code and **Rules**, and avoid its **Anti-patterns**. A code block whose first line is a full path (`# app/core/config/db.py`) is a tested file under `examples/`; read the full file there when the block isn't enough. Blocks marked `(fragment)` show part of a file.
-- Adapt names to the codebase (`orders-api`, module paths), not the other way round.
+- Adapt names to the codebase (`shop-api`, module paths), not the other way round.
 - Change only what the chosen patterns need; leave unrelated code as it is.
 - Finish with one short list: which patterns were applied, where, and any codebase fits not yet taken.

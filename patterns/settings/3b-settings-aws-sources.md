@@ -63,8 +63,8 @@ class Settings(BaseSettings):
 
 ```bash
 # Deployed env vars; unset locally
-AWS_SECRETS_MANAGER_SECRET_ID=orders/prd/app
-AWS_SSM_PATH=/orders/prd
+AWS_SECRETS_MANAGER_SECRET_ID=shop/prd/app
+AWS_SSM_PATH=/shop/prd
 # The sources build their own boto3 clients: short connect timeout, standard retries
 AWS_DEFAULTS_MODE=in-region
 ```
@@ -73,7 +73,7 @@ AWS_DEFAULTS_MODE=in-region
 |---|---|---|
 | Holds | Secrets | Plain configuration |
 | Shape | One secret, a JSON object | One parameter per field under a path |
-| Nested field | Key `db--auth--password` | `/orders/prd/db/host` |
+| Nested field | Key `db--auth--password` | `/shop/prd/db/host` |
 
 ## Where each value comes from
 | Value | Source |
@@ -87,7 +87,7 @@ AWS_DEFAULTS_MODE=in-region
 - **Opt-in by env var,** so the fixtures in [[1c-settings-testing]] work unchanged; test the wiring with `moto`.
 - **Env vars first,** so a deploy can override one value.
 - **One source per field.** A sub-model may span both (`db/auth/method` in Parameter Store, `db--auth--password` in Secrets Manager).
-- **Names match field names, case-sensitively.** `extra="forbid"` catches wrong names inside a sub-model; a wrong first segment (`/orders/prd/Db/host`) is silently ignored.
+- **Names match field names, case-sensitively.** `extra="forbid"` catches wrong names inside a sub-model; a wrong first segment (`/shop/prd/Db/host`) is silently ignored.
 - **Lists are JSON strings.**
 - **Few calls per startup:** one secret, one small path (a `GetParametersByPath` call per 10 parameters). Every new instance repeats them, and Parameter Store allows 40 TPS per account by default.
 - **Least privilege:** `GetSecretValue` on the app's secret ARN (`-??????` suffix, not `-*`), `GetParametersByPath` on its path.

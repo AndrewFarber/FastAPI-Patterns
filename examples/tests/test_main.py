@@ -10,9 +10,9 @@ def test_app_serves_healthz_with_engine_and_cors(create_app, monkeypatch):
     get_settings.cache_clear()
     app = create_app()
     with TestClient(app) as client:
-        assert app.state.engine.url.database == "orders_test"
+        assert app.state.engine.url.database == "shop_test"
         response = client.get("/healthz", headers={"Origin": "https://app.example.com"})
-    assert response.json() == {"status": "ok", "app": "orders-api"}
+    assert response.json() == {"status": "ok", "app": "shop-api"}
     assert response.headers["access-control-allow-origin"] == "https://app.example.com"
 
 
