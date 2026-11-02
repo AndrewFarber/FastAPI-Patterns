@@ -3,7 +3,7 @@ title: "Rotated DB passwords"
 category: persistence
 tags: [settings, database, secrets-rotation, secrets-manager]
 status: draft
-related: ["[[2b-settings-db]]", "[[2b-settings-db-cdk-rotation]]", "[[4a-settings-refreshing-values-cache]]", "[[1e-settings-lambda]]"]
+related: ["[[2b-settings-db]]", "[[4a-settings-refreshing-values-cache]]", "[[1e-settings-lambda]]"]
 ---
 
 # Rotated DB passwords
@@ -12,7 +12,7 @@ related: ["[[2b-settings-db]]", "[[2b-settings-db-cdk-rotation]]", "[[4a-setting
 With Secrets Manager rotation, the DB password changes under a running app. A password read once at startup (or put into a Lambda env var at deploy time) works until the next rotation; after that, every new connection fails until the execution environment is replaced.
 
 ## Use when
-- The DB password lives in Secrets Manager with rotation enabled (set up with CDK in [[2b-settings-db-cdk-rotation]]).
+- The DB password lives in Secrets Manager with rotation enabled (AWS setup below).
 
 ## Avoid when
 - The app uses IAM authentication ([[2b-settings-db-iam-auth]]): tokens are generated per connection, so there is nothing to rotate.
@@ -91,10 +91,17 @@ DB__AUTH__REGION=us-east-1
 - **`DB__USER` is still required** by `DbSettings`; set it to the app user. The secret's username replaces it on each connection.
 
 ### On Lambda
-- **Grant read, pass the ARN.** The stack sets `DB__AUTH__SECRET_ID` to the secret's ARN and calls `app_secret.grant_read(function)` ([[2b-settings-db-cdk-rotation]]). The password never appears in the function configuration.
+- **Grant read, pass the ARN.** The function's env vars carry only the secret's ARN in `DB__AUTH__SECRET_ID`, and its role may call `secretsmanager:GetSecretValue` on that secret. The password never appears in the function configuration.
 - **The cache lives per execution environment** ([[1e-settings-lambda]]). Each new environment fetches the secret on its first connection; with a pool of one, that is usually the only fetch until the TTL expires.
 - **Alternatives to the cache:** the AWS Parameters and Secrets Lambda Extension (`localhost:2773`, added to the image like any extension) or Powertools' `parameters.get_secret(..., max_age=...)`. The retry on a failed connection is still needed.
 - **Behind RDS Proxy** the proxy reads the secret itself; authenticating to it with IAM removes this hook ([[2b-settings-db-rds-tls]]).
+
+### AWS setup
+- **Two secrets.** The master user's, rotated with the single-user strategy and used only by administrators and the rotation function. The app user's, rotated with the alternating-users strategy and read by the app. Never give the app the master secret.
+- **The app user exists first.** Create `orders_app` with its grants (e.g. in a migration) before the first rotation: alternating-users rotation clones an existing user. Its secret holds `masterarn`, the master secret that rotation uses to change passwords.
+- **Behind RDS Proxy, rotate single-user.** The proxy doesn't support the alternating-users strategy, so secrets it reads use single-user rotation ([[2b-settings-db-rds-tls]]).
+- **The rotation function needs a route to Secrets Manager.** It runs in the database's VPC: give it a NAT gateway or a Secrets Manager VPC interface endpoint.
+- **Schedule:** 30 days is common. Each rotation makes cached passwords wrong until the retry above refetches them.
 
 ## Pitfalls
 - **The rotated password in an env var.** A Lambda env var (including `{{resolve:secretsmanager:...}}`) is resolved at deploy time and frozen into the published version: it breaks at the first rotation and is readable via `GetFunctionConfiguration`.
@@ -103,6 +110,5 @@ DB__AUTH__REGION=us-east-1
 
 ## Related
 - [[2b-settings-db]]
-- [[2b-settings-db-cdk-rotation]]
 - [[4a-settings-refreshing-values-cache]]
 - [[1e-settings-lambda]]

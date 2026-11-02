@@ -80,7 +80,7 @@ ENV APP__VERSION=$VERSION \
 CMD ["uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8080"]
 ```
 
-The image carries two extensions in `/opt/extensions`: LWA and the AppConfig agent ([[2f-settings-feature-flags-appconfig]]), whose layer zip must be downloaded before `docker build`. The function itself (`infra/service_stack.py`, shown in [[2b-settings-db-cdk-rotation]]) is a `DockerImageFunction` with a `live` alias, a Function URL on that alias, and a CodeDeploy deployment group that shifts the alias ([[1d-settings-deployments]]).
+The image carries two extensions in `/opt/extensions`: LWA and the AppConfig agent ([[2f-settings-feature-flags-appconfig]]), whose layer zip must be downloaded before `docker build`. The function is deployed from this image, with a `live` alias, a Function URL on that alias, and a CodeDeploy deployment group that shifts the alias ([[1d-settings-deployments]]).
 
 ### Init, invoke, shutdown
 | Phase | What runs | Settings consequence |
@@ -115,7 +115,7 @@ One request at a time per environment means one connection is enough: `DB__POOL_
 The image's filesystem is read-only at run time; only `/tmp` is writable (512 MB by default). CA bundles and other files go into the image at build time. File-mounted secrets don't exist on Lambda ([[3a-settings-secret-files]]).
 
 ### Function URL and CORS
-The Function URL (auth type `NONE`; the app verifies JWTs itself, [[2c-settings-auth]]) sits on the `live` alias. CORS is set in the app only ([[2d-settings-cors]]). A Function URL CORS config would answer preflight requests itself and add duplicate headers to the others, so the stack leaves it unset.
+The Function URL (auth type `NONE`; the app verifies JWTs itself, [[2c-settings-auth]]) sits on the `live` alias. CORS is set in the app only ([[2d-settings-cors]]). A Function URL CORS config would answer preflight requests itself and add duplicate headers to the others, so the function has none.
 
 ### SnapStart
 Not available: SnapStart doesn't support container images. Values read at init are therefore fresh for each new environment.

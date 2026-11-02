@@ -16,8 +16,6 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "aws-cdk-lib>=2.170",
-    "constructs>=10",
     "httpx>=0.27",
     "moto[secretsmanager,ssm]>=5",
     "pytest>=8",
@@ -35,4 +33,4 @@ src = ["settings"]
 select = ["E", "F", "I", "B", "UP"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["app", "infra", "conftest"]
+known-first-party = ["app", "conftest"]

@@ -28,25 +28,11 @@ Each deploy publishes a new Lambda version. A published version is immutable: it
 - **Rotated secrets.** Passwords from [[2b-settings-db-rotated-password]] and IAM tokens from [[2b-settings-db-iam-auth]] are fetched per connection, so both versions keep connecting through a rotation.
 
 ### Rolling out with CodeDeploy
-```python
-# infra/service_stack.py (fragment)
-errors = cloudwatch.Alarm(
-    self, "OrdersApiErrors",
-    metric=self.alias.metric_errors(period=Duration.minutes(1)),
-    threshold=1, evaluation_periods=1,
-    treat_missing_data=cloudwatch.TreatMissingData.NOT_BREACHING,
-)
-codedeploy.LambdaDeploymentGroup(
-    self, "OrdersApiDeployment",
-    alias=self.alias,
-    deployment_config=codedeploy.LambdaDeploymentConfig.CANARY_10_PERCENT_5_MINUTES,
-    alarms=[errors],                  # an alarm rolls the alias back
-)
-```
+A CodeDeploy deployment group on the `live` alias, with a canary or linear configuration (e.g. `LambdaCanary10Percent5Minutes`), automatic rollback, and a CloudWatch alarm on the alias's `Errors` metric (1-minute period, threshold 1, missing data not breaching). When the alarm fires, CodeDeploy points the alias back at the old version.
 
 - **`Errors` counts failed invocations** (init errors, crashes, timeouts), not 500 responses: through LWA, a 500 is a successful invocation. To also catch a version that starts but answers 500, alarm on a 5xx metric from the app's logs.
 - **To catch bad config before any traffic**, add a `pre_hook` function that invokes the new version (e.g. `GET /healthz`) and reports the result to CodeDeploy. Without it, the canary's share of requests fails until the alarm fires.
-- **Rollback targets stay invocable.** Old published versions keep existing (CDK retains them), so a rollback starts fresh environments of the old version. They read shared configuration again at init ([[1d-settings-deployments-shared-config]]).
+- **Rollback targets stay invocable.** Old published versions keep existing (unless deleted), so a rollback starts fresh environments of the old version. They read shared configuration again at init ([[1d-settings-deployments-shared-config]]).
 
 ### Tagging each version
 Tag every log line and metric with an identity that never changes: `AWS_LAMBDA_FUNCTION_VERSION` (`"7"`), which Lambda sets in each execution environment. A label like `canary` doesn't work: once promoted, the version would keep reporting `canary` for the rest of its life. The function version also tells apart two versions of the same release with different flags, which `AppSettings.version` ([[2a-settings-app-build-metadata]]) can't.

@@ -115,7 +115,7 @@ The function's execution role needs read access to exactly its own secret and pa
 }
 ```
 
-- `-??????` matches the six random characters AWS appends to secret ARNs. `-*` would also match `orders/prd/app-admin`. In CDK, `secret.grant_read(function)` produces the same.
+- `-??????` matches the six random characters AWS appends to secret ARNs. `-*` would also match `orders/prd/app-admin`.
 - Add `kms:Decrypt` on the key only when the secret or `SecureString` uses a customer managed KMS key.
 
 ### On Lambda

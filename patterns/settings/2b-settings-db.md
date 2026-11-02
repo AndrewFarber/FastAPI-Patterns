@@ -3,7 +3,7 @@ title: "DB settings"
 category: persistence
 tags: [settings, database, postgres, sqlalchemy]
 status: draft
-related: ["[[0-settings-guide]]", "[[1a-settings-management]]", "[[2b-settings-db-rds-tls]]", "[[2b-settings-db-iam-auth]]", "[[2b-settings-db-rotated-password]]", "[[2b-settings-db-cdk-rotation]]", "[[1e-settings-lambda]]"]
+related: ["[[0-settings-guide]]", "[[1a-settings-management]]", "[[2b-settings-db-rds-tls]]", "[[2b-settings-db-iam-auth]]", "[[2b-settings-db-rotated-password]]", "[[1e-settings-lambda]]"]
 ---
 
 # DB settings
@@ -179,7 +179,6 @@ DB__MAX_OVERFLOW=0
 | TLS to Amazon RDS, RDS Proxy | [[2b-settings-db-rds-tls]] |
 | No password: AWS IAM database authentication | [[2b-settings-db-iam-auth]] |
 | Password rotated by Secrets Manager, picked up without a restart | [[2b-settings-db-rotated-password]] |
-| Setting up rotation with AWS CDK | [[2b-settings-db-cdk-rotation]] |
 
 ## Pitfalls
 - **One `url` field.** `url: PostgresDsn` prints the password in reprs and logs; store parts and build the URL.
@@ -195,5 +194,4 @@ DB__MAX_OVERFLOW=0
 - [[2b-settings-db-rds-tls]]
 - [[2b-settings-db-iam-auth]]
 - [[2b-settings-db-rotated-password]]
-- [[2b-settings-db-cdk-rotation]]
 - [[1e-settings-lambda]]

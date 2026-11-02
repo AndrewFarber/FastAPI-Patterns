@@ -62,7 +62,7 @@ docker build \
 
 - **`build_time` is an `AwareDatetime`.** `date -u ...Z` carries its zone; a time without one is rejected rather than guessed.
 - **No `deployment` field.** The same image is promoted unchanged, so which deployment runs it is not a build fact. On Lambda, identify a deployment by the published function version, `AWS_LAMBDA_FUNCTION_VERSION`, which Lambda sets in every execution environment and which never changes. A role label like `canary` doesn't work as an identity: after promotion the version would keep reporting `canary`. [[1d-settings-deployments]] shows how it reaches the logs.
-- **Per-environment values** (`APP__IS_PRD`, hosts) are function env vars set by the stack. Lambda freezes them into each published version, so changing one means publishing a new version.
+- **Per-environment values** (`APP__IS_PRD`, hosts) are function env vars set by the deployment. Lambda freezes them into each published version, so changing one means publishing a new version.
 - `/healthz` returns `version` ([[1b-settings-access]]), so anyone can see what's deployed.
 
 ## Pitfalls

@@ -63,7 +63,7 @@ How the app authenticates to the proxy is a `DbAuth` choice ([[2b-settings-db]])
 | Database password, the same one as in the proxy's secret | `rotated_secret` ([[2b-settings-db-rotated-password]]) or `password` | The secret registered with the proxy |
 
 - **`iam` is simplest on Lambda.** The function needs no access to the database secret; the proxy reads it, rotated or not.
-- **The proxy reads the secret itself.** It doesn't support the alternating-users rotation strategy, so rotate the secrets it reads with single-user rotation ([[2b-settings-db-cdk-rotation]]).
+- **The proxy reads the secret itself.** It doesn't support the alternating-users rotation strategy, so rotate the secrets it reads with single-user rotation ([[2b-settings-db-rotated-password]]).
 
 ### AWS Advanced Python Wrapper
 AWS's driver wrapper for psycopg adds plugins for IAM auth, Secrets Manager, and fast failover (mainly for Aurora). It supports SQLAlchemy and can replace the hand-written `do_connect` hooks in [[2b-settings-db-iam-auth]] and [[2b-settings-db-rotated-password]].

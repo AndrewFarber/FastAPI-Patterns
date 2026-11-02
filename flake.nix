@@ -10,7 +10,7 @@
 
       # Nix provides the tools; uv installs the Python packages pinned in examples/uv.lock
       # ruff comes from nixpkgs: the wheel uv would install is a generic Linux binary NixOS can't run
-      tools = pkgs: [ pkgs.python3 pkgs.uv pkgs.nodejs pkgs.git pkgs.ruff ];
+      tools = pkgs: [ pkgs.python3 pkgs.uv pkgs.git pkgs.ruff ];
       uvEnv = pkgs: ''
         export UV_PYTHON=${pkgs.python3}/bin/python3
         export UV_PYTHON_DOWNLOADS=never

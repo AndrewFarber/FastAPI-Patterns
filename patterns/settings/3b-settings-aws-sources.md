@@ -22,23 +22,19 @@ Pick by when the value is resolved and whether it is secret:
 
 | Value | Resolved | How |
 |---|---|---|
-| Non-secret configuration (host, pool size, client IDs) | At deploy, into an env var | Set it in the stack, or read a parameter at deploy time (below) |
+| Non-secret configuration (host, pool size, client IDs) | At deploy, into an env var | Set it in the deployment, or read a parameter at deploy time (below) |
 | Secrets, or too many values for 4 KB of env vars | At init, by the app | pydantic-settings AWS sources: [[3b-settings-aws-sources-pydantic]] |
 | A rotated DB password | Per new connection | [[2b-settings-db-rotated-password]] |
 | Values that must change while the app runs | On a TTL | [[4a-settings-refreshing-values]] |
 
-Non-secret parameters resolved at deploy time with AWS CDK:
+The function's env vars, as the deployment sets them:
 
-```python
-# infra/service_stack.py (fragment)
-from aws_cdk import aws_ssm as ssm
-
-environment={
-    # Resolved by CloudFormation at deploy time, then frozen into the published version
-    "DB__HOST": ssm.StringParameter.value_for_string_parameter(self, "/orders/prd/db/host"),
-    # A secret: pass only its ARN; the app reads the value and needs read access
-    "DB__AUTH__SECRET_ID": database.app_secret.secret_arn,
-},
+```bash
+# Non-secret: read from Parameter Store by the deploy tool (e.g. CloudFormation's
+# {{resolve:ssm:/orders/prd/db/host}}), then frozen into the published version
+DB__HOST=orders.abc123.us-east-1.rds.amazonaws.com
+# A secret: only its ARN; the app reads the value and its role needs read access
+DB__AUTH__SECRET_ID=arn:aws:secretsmanager:us-east-1:123456789012:secret:orders/prd/db-app-AbCdEf
 ```
 
 - **Deploy-time values** need a redeploy to change, which also publishes a new version that CodeDeploy rolls out ([[1d-settings-deployments]]).

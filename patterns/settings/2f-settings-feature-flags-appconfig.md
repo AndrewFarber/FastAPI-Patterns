@@ -43,24 +43,15 @@ COPY --from=public.ecr.aws/awsguru/aws-lambda-adapter:1.1.0 /lambda-adapter /opt
 ```
 
 ### Point the function at it
-```python
-# infra/service_stack.py (fragment)
-environment={
-    # Where the app reads the runtime flags: the AppConfig environment is named per stage
-    "FEATURES__RUNTIME_FLAGS__APPLICATION": "orders-api",
-    "FEATURES__RUNTIME_FLAGS__ENVIRONMENT": appconfig_environment,
-    # The agent fetches these during its own init, before the app's, so the first read is a cache hit
-    "AWS_APPCONFIG_EXTENSION_PREFETCH_LIST": (
-        f"/applications/orders-api/environments/{appconfig_environment}/configurations/runtime-flags"
-    ),
-},
-...
-# The AppConfig agent extension calls AppConfig with the function's role
-self.function.add_to_role_policy(iam.PolicyStatement(
-    actions=["appconfig:StartConfigurationSession", "appconfig:GetLatestConfiguration"],
-    resources=[f"arn:{self.partition}:appconfig:{self.region}:{self.account}:application/*"],
-))
+```bash
+# The function's env vars. Where the app reads the runtime flags: the AppConfig environment is named per stage
+FEATURES__RUNTIME_FLAGS__APPLICATION=orders-api
+FEATURES__RUNTIME_FLAGS__ENVIRONMENT=prd
+# The agent fetches these during its own init, before the app's, so the first read is a cache hit
+AWS_APPCONFIG_EXTENSION_PREFETCH_LIST=/applications/orders-api/environments/prd/configurations/runtime-flags
 ```
+
+The agent calls AppConfig with the function's role, which needs `appconfig:StartConfigurationSession` and `appconfig:GetLatestConfiguration` on the flags' configuration profile: `arn:aws:appconfig:<region>:<account>:application/<app-id>/environment/<env-id>/configuration/<profile-id>`, not `application/*`.
 
 `FEATURES__RUNTIME_FLAGS__*` fills `FeatureSettings.runtime_flags` ([[2f-settings-feature-flags]]). Locally it stays unset: no agent, no HTTP calls, flags keep their defaults.
 
@@ -164,7 +155,7 @@ RuntimeFlagsDep = Annotated[RuntimeFlags, Depends(get_runtime_flags)]
 - **Silent failures.** A broken agent leaves flags frozen at their last values. Alert on the warning.
 - **No extension in the image, or no IAM permissions.** Every read fails and every flag stays at its default, with no error at init. The warning in the logs is the only sign.
 - **Deriving the AppConfig environment from `is_prd`.** `"prd" if is_prd else "dev"` points staging at dev's flags. Name the environment per stage.
-- **Forgetting `FEATURES__RUNTIME_FLAGS__*` in a deployed stage.** The app then never asks the agent and flags keep their defaults. The stack sets them next to `AWS_APPCONFIG_EXTENSION_PREFETCH_LIST`.
+- **Forgetting `FEATURES__RUNTIME_FLAGS__*` in a deployed stage.** The app then never asks the agent and flags keep their defaults. Set them next to `AWS_APPCONFIG_EXTENSION_PREFETCH_LIST`.
 - **Mixing static and runtime flags.** Keep release toggles in `FeatureSettings`; only operational toggles belong here.
 
 ## Related

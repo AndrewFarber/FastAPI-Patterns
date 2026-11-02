@@ -28,7 +28,6 @@ Runtime: the notes assume the app runs on AWS Lambda as a container image behind
     - [[2b-settings-db-rds-tls]]: TLS to Amazon RDS, RDS Proxy.
     - [[2b-settings-db-iam-auth]]: AWS IAM database authentication.
     - [[2b-settings-db-rotated-password]]: passwords rotated by Secrets Manager, picked up without a restart.
-    - [[2b-settings-db-cdk-rotation]]: setting up RDS password rotation with AWS CDK.
 - [[2c-settings-auth]]: verifying tokens from any OIDC identity provider.
     - [[2c-settings-auth-cognito]]: AWS Cognito.
 - [[2d-settings-cors]]: allowed browser origins.

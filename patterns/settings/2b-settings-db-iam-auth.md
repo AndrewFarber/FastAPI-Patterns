@@ -81,9 +81,9 @@ DB__SSLROOTCERT=/etc/ssl/certs/rds-global-bundle.pem
 - **No secret to read.** On Lambda, the function's role signs tokens locally, so init makes no Secrets Manager call ([[1e-settings-lambda]]).
 
 ### AWS setup
-- IAM database authentication enabled on the instance (CDK: `iam_authentication=True`).
+- IAM database authentication enabled on the instance.
 - A dedicated DB user with the `rds_iam` role: `CREATE USER orders_app; GRANT rds_iam TO orders_app;`. Once a user has `rds_iam`, IAM auth takes precedence and that user can no longer log in with a password, so don't grant it to the master user.
-- The app's role allowed `rds-db:connect` on `arn:aws:rds-db:<region>:<account>:dbuser:<DbiResourceId>/orders_app` (CDK: `instance.grant_connect(function, "orders_app")`).
+- The app's role allowed `rds-db:connect` on `arn:aws:rds-db:<region>:<account>:dbuser:<DbiResourceId>/orders_app`.
 - **Database capacity:** AWS advises 300 to 1000 MiB of extra memory on the DB instance for IAM authentication. On burstable instances, reduce other memory settings to compensate.
 - **Auditing:** CloudWatch and CloudTrail don't log IAM DB authentication or token generation. Audit connections in the database; `application_name` identifies the app.
 
@@ -96,9 +96,8 @@ DB__AUTH__METHOD=iam
 DB__SSLROOTCERT=/etc/ssl/certs/amazon-root-cas.pem
 ```
 
-- The token is generated for the proxy endpoint, and the role needs `rds-db:connect` on the proxy (`dbuser:prx-<id>/orders_app`; CDK: `proxy.grant_connect(function, "orders_app")`).
+- The token is generated for the proxy endpoint, and the role needs `rds-db:connect` on the proxy (`dbuser:prx-<id>/orders_app`).
 - The proxy connects to the database with the user's password from Secrets Manager, so the user keeps a password and must **not** have `rds_iam`. Only end-to-end IAM (proxy to database too) needs `rds_iam`.
-- CDK setup for the proxy is in [[2b-settings-db-cdk-rotation]].
 
 ## Pitfalls
 - **IAM tokens in settings.** Tokens expire after 15 minutes; generate them per connection in `do_connect`, never at startup.

@@ -16,7 +16,7 @@ Code blocks whose first line is a full path (`# app/config/db.py`) are copies of
 ```bash
 nix run .#sync      # copy example code into the notes
 nix run .#test      # run every topic's tests, including a check that the notes are in sync
-nix develop         # shell with Python, uv, and Node; then e.g. `cd examples && uv run pytest settings`
+nix develop         # shell with Python and uv; then e.g. `cd examples && uv run pytest settings`
 ```
 
-Python packages are pinned in `examples/uv.lock`; Nix provides Python, uv, Node (for AWS CDK), and git.
+Python packages are pinned in `examples/uv.lock`; Nix provides Python, uv, ruff, and git.

@@ -10,7 +10,7 @@ description: Curated FastAPI design patterns and anti-patterns. Use when designi
 2. Open each topic's guide (`0-<topic>-guide.md`, or the topic's single note) and pick the notes that match. Open only those notes; don't load the whole vault.
 3. `[[some-note]]` is an Obsidian wikilink to `some-note.md` somewhere under `patterns/`. Find it by filename.
 4. Ignore `TODO.md`. It is the author's planning list, not pattern content.
-5. A code block whose first line is a full path (`# app/config/db.py`, `# infra/database_stack.py`) is a copy of a tested file in `examples/<topic>/`. Read `examples/` only when a note's code isn't enough. Blocks with short paths (`# main.py`) are fragments.
+5. A code block whose first line is a full path (`# app/config/db.py`, `# Dockerfile`) is a copy of a tested file in `examples/<topic>/`. Read `examples/` only when a note's code isn't enough. Blocks with short paths (`# main.py`) are fragments.
 
 ## Choosing between patterns
 When a pattern note offers several options (e.g. three ways to access settings):
