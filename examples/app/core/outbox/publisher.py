@@ -14,10 +14,12 @@ class OutboxPublisher:
         self.event_ids: list[UUID] = []
 
     def publish(self, event: DomainEvent) -> None:
-        self._session.add(OutboxRow(
-            event_id=event.event_id,
-            event_type=event_name(type(event)),
-            payload=to_payload(event),
-            created_at=datetime.now(UTC),
-        ))
+        self._session.add(
+            OutboxRow(
+                event_id=event.event_id,
+                event_type=event_name(type(event)),
+                payload=to_payload(event),
+                created_at=datetime.now(UTC),
+            )
+        )
         self.event_ids.append(event.event_id)

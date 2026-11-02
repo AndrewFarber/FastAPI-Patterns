@@ -40,13 +40,21 @@ def test_verify_full_needs_a_ca():
 def test_connect_args(ca_bundle):
     db = DbSettings(host="h", user="u", name="n", sslrootcert=ca_bundle, auth={"method": "password", "password": "p"})
     assert db.connect_args("shop-api") == {
-        "sslmode": "verify-full", "connect_timeout": 10, "application_name": "shop-api", "sslrootcert": str(ca_bundle),
+        "sslmode": "verify-full",
+        "connect_timeout": 10,
+        "application_name": "shop-api",
+        "sslrootcert": str(ca_bundle),
     }
 
 
 def test_iam_token_per_connection(ca_bundle):
-    db = DbSettings(host="shop.abc123.us-east-1.rds.amazonaws.com", user="shop_app", name="shop",
-                    sslrootcert=ca_bundle, auth={"method": "iam", "region": "us-east-1"})
+    db = DbSettings(
+        host="shop.abc123.us-east-1.rds.amazonaws.com",
+        user="shop_app",
+        name="shop",
+        sslrootcert=ca_bundle,
+        auth={"method": "iam", "region": "us-east-1"},
+    )
     engine = build_engine(db, "shop-api")
     cparams = {}
     for listener in engine.dialect.dispatch.do_connect:
@@ -57,4 +65,3 @@ def test_iam_token_per_connection(ca_bundle):
 def test_iam_requires_tls():
     with pytest.raises(ValueError, match="requires TLS"):
         build_engine(DbSettings(**LOCAL, auth={"method": "iam", "region": "us-east-1"}), "shop-api")
-

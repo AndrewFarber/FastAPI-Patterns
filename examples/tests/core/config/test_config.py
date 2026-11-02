@@ -57,7 +57,9 @@ def test_cors():
 def test_shell_quoted_json_list(test_env, monkeypatch):
     value = subprocess.run(
         ["bash", "-c", """V='["http://localhost:3000"]'; printf %s "$V" """],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout
     monkeypatch.setenv("CORS__ALLOW_ORIGINS", value)
     get_settings.cache_clear()

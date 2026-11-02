@@ -21,9 +21,7 @@ class SqlOrderRepository:
         return order
 
     def open_for_user(self, user_id: int) -> list[Order]:
-        rows = self._session.scalars(
-            select(OrderRow).where(OrderRow.user_id == user_id, OrderRow.status == OrderStatus.OPEN)
-        )
+        rows = self._session.scalars(select(OrderRow).where(OrderRow.user_id == user_id, OrderRow.status == OrderStatus.OPEN))
         return [to_entity(row) for row in rows]
 
     def save(self, order: Order) -> None:

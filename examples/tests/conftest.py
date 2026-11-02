@@ -23,7 +23,10 @@ from app.services.users.infrastructure.models import UserRow
 
 TEST_VALUES: dict[str, dict[str, Any]] = {
     "db": {
-        "host": "localhost", "user": "test", "name": "shop_test", "sslmode": "disable",
+        "host": "localhost",
+        "user": "test",
+        "name": "shop_test",
+        "sslmode": "disable",
         "auth": {"method": "password", "password": "test"},
     },
     "events": {"topic_arn": "arn:aws:sns:us-east-1:123456789012:shop-events"},
@@ -73,6 +76,7 @@ def restore_logging() -> Iterator[None]:
 @pytest.fixture
 def create_app(test_env, restore_logging) -> Callable[[], FastAPI]:
     from app.main import create_app
+
     return create_app
 
 
@@ -89,9 +93,9 @@ def aws_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
 def engine() -> Iterator[Engine]:
     tables = [UserRow.__table__, OrderRow.__table__, OutboxRow.__table__, ProcessedEventRow.__table__]
     schemas = {table.schema: None for table in tables}
-    engine = create_engine(
-        "sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
-    ).execution_options(schema_translate_map=schemas)
+    engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}).execution_options(
+        schema_translate_map=schemas
+    )
     Base.metadata.create_all(engine, tables=tables)
     yield engine
     engine.dispose()
@@ -134,7 +138,9 @@ def subscribe_queue(topic_arn: str, consumer: EventConsumer) -> str:
     queue_url = sqs.create_queue(QueueName=f"shop-{consumer.name}-events")["QueueUrl"]
     queue_arn = sqs.get_queue_attributes(QueueUrl=queue_url, AttributeNames=["QueueArn"])["Attributes"]["QueueArn"]
     boto3.client("sns").subscribe(
-        TopicArn=topic_arn, Protocol="sqs", Endpoint=queue_arn,
+        TopicArn=topic_arn,
+        Protocol="sqs",
+        Endpoint=queue_arn,
         Attributes={"RawMessageDelivery": "true", "FilterPolicy": json.dumps({"event_type": consumer.event_names})},
     )
     return queue_url

@@ -27,13 +27,14 @@ class AwsSettings(Settings):
 
 def test_aws_sources_merge_secret_and_parameters(monkeypatch):
     with mock_aws():
-        boto3.client("secretsmanager").create_secret(
-            Name="shop/prd/app", SecretString=json.dumps({"db--auth--password": "p@ss"})
-        )
+        boto3.client("secretsmanager").create_secret(Name="shop/prd/app", SecretString=json.dumps({"db--auth--password": "p@ss"}))
         ssm = boto3.client("ssm")
         for name, value in {
-            "/shop/prd/db/host": "rds", "/shop/prd/db/user": "shop_app", "/shop/prd/db/name": "shop",
-            "/shop/prd/db/sslmode": "disable", "/shop/prd/db/auth/method": "password",
+            "/shop/prd/db/host": "rds",
+            "/shop/prd/db/user": "shop_app",
+            "/shop/prd/db/name": "shop",
+            "/shop/prd/db/sslmode": "disable",
+            "/shop/prd/db/auth/method": "password",
             "/shop/prd/events/topic_arn": "arn:aws:sns:us-east-1:123456789012:shop-events",
         }.items():
             ssm.put_parameter(Name=name, Value=value, Type="String")
