@@ -5,7 +5,7 @@ An Obsidian vault of FastAPI design patterns, also usable as a Claude Code skill
 ## Layout
 - `patterns/<topic>/`: the notes. Each topic folder has a `0-<topic>-guide` note listing its notes.
 - `examples/<topic>/`: the runnable, tested code that the notes show.
-- `INDEX.md`: every topic and note, for Claude.
+- `INDEX.md`: one line per topic, pointing to its guide, for Claude.
 
 ## Note names
 `<section><letter>-<topic>-<name>`, e.g. `2b-settings-db`. A note for a specific capability keeps the general note's prefix and extends its name: `2b-settings-db-iam-auth`.

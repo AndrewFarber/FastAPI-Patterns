@@ -15,7 +15,7 @@ Cognito tokens don't follow the usual OIDC conventions for APIs: by default, acc
 - Users sign in through an AWS Cognito user pool and the API verifies Cognito access tokens with `AuthSettings` ([[2c-settings-auth]]).
 
 ## Avoid when
-- The API sits behind API Gateway with a Cognito authorizer, which already verifies tokens. A Lambda Function URL has no Cognito authorizer; behind one, the app verifies tokens with this note ([[1e-settings-lambda]]).
+- The API sits behind API Gateway with a Cognito authorizer, which already verifies tokens. A Lambda Function URL has no Cognito authorizer, so behind a Function URL the app verifies tokens itself, as this note configures ([[1e-settings-lambda]]).
 
 ## Solution
 No code changes: Cognito is configured through the general `AuthSettings` fields.

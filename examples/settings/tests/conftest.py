@@ -35,10 +35,10 @@ def make_test_env() -> dict[str, str]:
 def clear_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Drop the developer's own APP__*, DB__*, ... so APP__IS_PRD=true in a shell can't change a test."""
     sections = {name.upper() for name in Settings.model_fields}
-    aws_sources = {"AWS_SECRETS_MANAGER_SECRET_ID", "AWS_SSM_PATH"}
+    source_switches = {"AWS_SECRETS_MANAGER_SECRET_ID", "AWS_SSM_PATH", "SECRETS_DIR"}   # turn on optional sources
     for key in list(os.environ):
         upper = key.upper()                          # env var names are matched case-insensitively
-        if upper.split("__")[0] in sections or upper in aws_sources:
+        if upper.split("__")[0] in sections or upper in source_switches:
             monkeypatch.delenv(key)
 
 

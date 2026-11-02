@@ -31,7 +31,7 @@ Each deploy publishes a new Lambda version. A published version is immutable: it
 A CodeDeploy deployment group on the `live` alias, with a canary or linear configuration (e.g. `LambdaCanary10Percent5Minutes`), automatic rollback, and a CloudWatch alarm on the alias's `Errors` metric (1-minute period, threshold 1, missing data not breaching). When the alarm fires, CodeDeploy points the alias back at the old version.
 
 - **`Errors` counts failed invocations** (init errors, crashes, timeouts), not 500 responses: through LWA, a 500 is a successful invocation. To also catch a version that starts but answers 500, alarm on a 5xx metric from the app's logs.
-- **To catch bad config before any traffic**, add a `pre_hook` function that invokes the new version (e.g. `GET /healthz`) and reports the result to CodeDeploy. Without it, the canary's share of requests fails until the alarm fires.
+- **To catch bad config before any traffic**, add a `BeforeAllowTraffic` hook: a function that invokes the new version (e.g. `GET /healthz`) and reports the result to CodeDeploy. Without it, the canary's share of requests fails until the alarm fires.
 - **Rollback targets stay invocable.** Old published versions keep existing (unless deleted), so a rollback starts fresh environments of the old version. They read shared configuration again at init ([[1d-settings-deployments-shared-config]]).
 
 ### Tagging each version

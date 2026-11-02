@@ -57,10 +57,10 @@ def make_test_env() -> dict[str, str]:
 def clear_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Drop the developer's own APP__*, DB__*, ... so APP__IS_PRD=true in a shell can't change a test."""
     sections = {name.upper() for name in Settings.model_fields}
-    aws_sources = {"AWS_SECRETS_MANAGER_SECRET_ID", "AWS_SSM_PATH"}
+    source_switches = {"AWS_SECRETS_MANAGER_SECRET_ID", "AWS_SSM_PATH", "SECRETS_DIR"}   # turn on optional sources
     for key in list(os.environ):
         upper = key.upper()                          # env var names are matched case-insensitively
-        if upper.split("__")[0] in sections or upper in aws_sources:
+        if upper.split("__")[0] in sections or upper in source_switches:
             monkeypatch.delenv(key)
 
 
@@ -105,7 +105,7 @@ def aws_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
 - **Approach 3** (app factory) needs none of this: tests pass settings in, `create_app(make_test_settings())`.
 - **Approach 1** (module singleton) reads the environment at import time, so variables must be set before `app.config.settings` is first imported (e.g. at the top of `conftest.py`).
 - **Sub-models test on their own:** `FeatureSettings(new_checkout=True)`, `CorsSettings(allow_origins=[...])`. No root `Settings` needed.
-- **AWS sources** stay off in tests because `clean_env` removes `AWS_SECRETS_MANAGER_SECRET_ID` and `AWS_SSM_PATH`; see [[3b-settings-aws-sources-pydantic]] for testing them with `moto`.
+- **Optional sources** stay off in tests because `clean_env` removes the variables that turn them on: `AWS_SECRETS_MANAGER_SECRET_ID`, `AWS_SSM_PATH` ([[3b-settings-aws-sources-pydantic]]) and `SECRETS_DIR` ([[3a-settings-secret-files]]); see [[3b-settings-aws-sources-pydantic]] for testing them with `moto`.
 - **`aws_credentials`** sets fake AWS credentials for tests that use `moto` or sign IAM tokens offline, so no test can reach a real AWS account.
 
 ## Pitfalls

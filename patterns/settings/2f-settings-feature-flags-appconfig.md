@@ -31,8 +31,8 @@ aws lambda get-layer-version-by-arn \
 
 ```dockerfile
 # Dockerfile (fragment): additions to the Dockerfile in 1e-settings-lambda
-# A new first stage that unpacks the layer. Pin the image by digest, like the others
-FROM public.ecr.aws/docker/library/python:3.14-slim AS appconfig-extension
+# A new first stage that unpacks the layer, from the same pinned image as the final stage
+FROM public.ecr.aws/docker/library/python:3.14-slim@sha256:930e1abba7c4e8f96ed93e8012c35d174d7732752731bbd5e8e757d7ec6f3966 AS appconfig-extension
 RUN apt-get update && apt-get install -y --no-install-recommends unzip   # keeps the binaries' exec bits
 COPY settings/appconfig-extension.zip /tmp/
 RUN unzip /tmp/appconfig-extension.zip -d /opt

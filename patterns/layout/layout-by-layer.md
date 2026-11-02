@@ -37,7 +37,7 @@ project/
 ### Application
 ```
 app/
-├── main.py           only .py file at this level
+├── main.py           the app; app-wide modules (observability.py) sit next to it
 ├── config/
 ├── db/
 ├── security/
@@ -57,7 +57,7 @@ app/
 
 | Folder          | Responsibility                                                                                                                                            |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `main.py`       | Creates the app, mounts routers, registers middleware and exception handlers. No business logic.                                                          |
+| `main.py`       | Creates the app, mounts routers, registers middleware and exception handlers. No business logic. Small app-wide modules (`observability.py`) sit next to it. |
 | `config/`       | Settings (`pydantic-settings`): one sub-model per concern, composed in `settings.py`, read from env vars. See [[1a-settings-management]].                 |
 | `db/`           | Engine, session factory, ORM declarative base. Creates DB plumbing; does not hand it to requests.                                                         |
 | `security/`     | Pure helpers: verifying identity-provider tokens (JWKS fetch and cache, claim checks). No FastAPI imports. See [[2c-settings-auth]].                      |

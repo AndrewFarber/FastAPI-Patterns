@@ -34,7 +34,7 @@ class RotatedSecretAuth(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     method: Literal["rotated_secret"]
-    secret_id: str                                  # e.g. "orders/prd/db-app"
+    secret_id: str                                  # the secret's ARN (a name works too)
     region: str
     ttl_seconds: float = Field(default=300, gt=0)   # how long to cache the secret
 ```
@@ -82,12 +82,12 @@ def add_rotated_password(engine: Engine, db: DbSettings) -> None:
 
 ```bash
 DB__AUTH__METHOD=rotated_secret
-DB__AUTH__SECRET_ID=orders/prd/db-app
+DB__AUTH__SECRET_ID=arn:aws:secretsmanager:us-east-1:123456789012:secret:orders/prd/db-app-AbCdEf
 DB__AUTH__REGION=us-east-1
 ```
 
 - **Retry once, only with a different secret.** Between a rotation and the cache expiring, the cached password is wrong; the failed connection invalidates it and refetches. libpq reports no SQLSTATE for connection failures, so an auth error looks like an outage. Retrying only when the secret changed keeps an outage to one connect timeout instead of two.
-- **Use `username` from the secret too.** Multi-user rotation alternates between two users (`orders_app` and `orders_app_clone`), so the username changes as well.
+- **Use `username` from the secret too.** Alternating-users rotation switches between two users (`orders_app` and `orders_app_clone`), so the username changes as well.
 - **`DB__USER` is still required** by `DbSettings`; set it to the app user. The secret's username replaces it on each connection.
 
 ### On Lambda
@@ -106,7 +106,7 @@ DB__AUTH__REGION=us-east-1
 ## Pitfalls
 - **The rotated password in an env var.** A Lambda env var (including `{{resolve:secretsmanager:...}}`) is resolved at deploy time and frozen into the published version: it breaks at the first rotation and is readable via `GetFunctionConfiguration`.
 - **Retrying on every connection error.** A database outage then takes twice as long to surface. Retry once, and only when the secret changed.
-- **Ignoring `username`.** Multi-user rotation changes it.
+- **Ignoring `username`.** Alternating-users rotation changes it.
 
 ## Related
 - [[2b-settings-db]]

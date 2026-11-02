@@ -53,7 +53,8 @@ ENV APP__VERSION=$VERSION \
 ```
 
 ```bash
-docker build \
+# From examples/, where the lockfile lives
+docker build -f settings/Dockerfile \
   --build-arg VERSION=1.4.2 \
   --build-arg GIT_SHA=$(git rev-parse HEAD) \
   --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) \

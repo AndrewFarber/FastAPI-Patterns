@@ -183,7 +183,7 @@ Other ways values reach `Settings`: AWS Secrets Manager or Parameter Store, read
 - **Optional subsystems** use `X | None = None`. Code checks `if settings.email is None` instead of reading a separate `email_enabled` flag.
 - **Sub-model defaults** use `Field(default_factory=...)`, not a shared instance.
 - **Validate formats with pydantic types and constraints** (`EmailStr`, `Literal`, `Field(pattern=..., gt=...)`) so bad values fail at startup, not at first use.
-- **`extra="forbid"` on every model.** A misspelled env var (`DB__POOL_SZIE`) or a stale field fails at startup instead of being silently ignored.
+- **`extra="forbid"` on every settings model.** A misspelled env var (`DB__POOL_SZIE`) or a stale field fails at startup instead of being silently ignored. Payloads read at runtime are different: the AppConfig flags model ([[2f-settings-feature-flags-appconfig]]) uses `extra="ignore"`, so a flag added in AppConfig before the code doesn't break reads.
 - **No secrets in plain env vars in deployed environments.** On Lambda, env vars are readable by anyone with `lambda:GetFunctionConfiguration` and limited to 4 KB in total. Passwords and keys stay in Secrets Manager or Parameter Store, and the app reads them at startup ([[3b-settings-aws-sources-pydantic]]) or per connection ([[2b-settings-db-rotated-password]]); env vars carry only the secret's ARN or name. See [[1e-settings-lambda]].
 - Env var names are case-insensitive; nested fields use the `__` delimiter. Source priority, highest first: init kwargs → environment variables → dotenv file → secret files → defaults. The dotenv and secret-file sources read nothing until `env_file` or `secrets_dir` is set ([[3a-settings-secret-files]]); this `Settings` sets neither.
 

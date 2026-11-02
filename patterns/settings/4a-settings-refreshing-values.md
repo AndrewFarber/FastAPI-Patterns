@@ -12,7 +12,7 @@ related: ["[[0-settings-guide]]", "[[1e-settings-lambda]]", "[[4a-settings-refre
 `Settings` is read once and frozen. Some values change while the app runs: Secrets Manager rotates the DB password, an operator flips a kill switch, a feature rolls out gradually. Without a refresh mechanism these changes need new execution environments (a new deploy), and a rotated password breaks new DB connections until then.
 
 ## Use when
-- A secret is rotated automatically (Secrets Manager rotation, RDS-managed master password).
+- A secret the app reads is rotated automatically by Secrets Manager.
 - A flag must change within minutes without a deploy: kill switches, gradual rollouts.
 
 ## Avoid when
