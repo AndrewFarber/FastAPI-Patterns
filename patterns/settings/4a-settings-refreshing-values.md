@@ -3,7 +3,7 @@ title: "Refreshing settings values"
 category: project-structure
 tags: [settings, caching, secrets-rotation, feature-flags]
 status: draft
-related: ["[[0-settings-guide]]", "[[1d-settings-deployments]]", "[[4a-settings-refreshing-values-ttl]]", "[[4a-settings-refreshing-values-cache]]", "[[2b-settings-db-rotated-password]]", "[[2f-settings-feature-flags-appconfig]]"]
+related: ["[[0-settings-guide]]", "[[1b-settings-access]]", "[[4a-settings-refreshing-values-ttl]]", "[[4a-settings-refreshing-values-cache]]", "[[2b-settings-db-rotated-password]]", "[[2f-settings-feature-flags-appconfig]]"]
 ---
 
 # Refreshing settings values
@@ -14,7 +14,7 @@ related: ["[[0-settings-guide]]", "[[1d-settings-deployments]]", "[[4a-settings-
 - A secret rotates automatically, or a flag must change within minutes without a deploy.
 
 Not when:
-- A redeploy is acceptable. It validates every value together and rolls back a bad one ([[1d-settings-deployments]]).
+- A redeploy is acceptable. It validates every value together, and a bad one fails startup ([[1b-settings-access]]).
 
 ## Signals
 - **Feature:** "pick up the new value without a restart", "rotation", "kill switch".
@@ -45,7 +45,7 @@ Not when:
 
 ## Related
 - [[0-settings-guide]]
-- [[1d-settings-deployments]]
+- [[1b-settings-access]]
 - [[4a-settings-refreshing-values-ttl]]
 - [[4a-settings-refreshing-values-cache]]
 - [[2b-settings-db-rotated-password]]

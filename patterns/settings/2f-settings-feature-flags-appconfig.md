@@ -3,7 +3,7 @@ title: "Runtime feature flags"
 category: project-structure
 tags: [settings, feature-flags, aws-appconfig]
 status: draft
-related: ["[[2f-settings-feature-flags]]", "[[1d-settings-deployments]]", "[[4a-settings-refreshing-values]]"]
+related: ["[[2f-settings-feature-flags]]", "[[4a-settings-refreshing-values]]"]
 ---
 
 # Runtime feature flags
@@ -117,7 +117,7 @@ RuntimeFlagsDep = Annotated[RuntimeFlags, Depends(get_runtime_flags)]
 - **`extra="ignore"` on `RuntimeFlags`,** unlike settings: a flag can be added in AppConfig before the code that reads it.
 - **One client per process,** `lru_cache`d like `get_settings()`; nothing on `app.state`.
 - **The agent does auth, polling, and caching.** On Lambda it's an extension in `/opt/extensions`; the role needs `appconfig:StartConfigurationSession` and `GetLatestConfiguration` on the profile.
-- **Roll flag changes out with an AppConfig deployment strategy** (e.g. linear 20%), with alarms that roll it back. The app's canary doesn't cover them ([[1d-settings-deployments]]). Kill switches use `AllAtOnce`, ideally in their own AppConfig environment so a running rollout can't block them.
+- **Roll flag changes out with an AppConfig deployment strategy** (e.g. linear 20%), with alarms that roll it back. The app's own canary doesn't cover them: they reach every running version at once. Kill switches use `AllAtOnce`, ideally in their own AppConfig environment so a running rollout can't block them.
 
 ## Anti-patterns
 - **Unsafe defaults.** A broken agent turns them on.
@@ -126,5 +126,4 @@ RuntimeFlagsDep = Annotated[RuntimeFlags, Depends(get_runtime_flags)]
 
 ## Related
 - [[2f-settings-feature-flags]]
-- [[1d-settings-deployments]]
 - [[4a-settings-refreshing-values]]

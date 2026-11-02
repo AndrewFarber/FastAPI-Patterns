@@ -159,7 +159,7 @@ CORS__ALLOW_ORIGINS='["http://localhost:3000"]'
 - **One class for every environment.** Environments differ only by the values they set.
 
 ## Anti-patterns
-- **`os.environ` outside `config/`.** The one exception is platform metadata, not configuration (`AWS_LAMBDA_FUNCTION_VERSION`, [[1d-settings-deployments]]).
+- **`os.environ` outside `config/`.** The one exception is platform metadata, not configuration (`AWS_LAMBDA_FUNCTION_VERSION`, [[2a-settings-app-build-metadata]]).
 - **Plain `str` for secrets.** Only `SecretStr` is masked in logs, reprs, and tracebacks.
 - **A default for a required value.** A default host hides a missing env var until the app connects to the wrong place.
 - **Trailing comments in env files.** Docker keeps `value  # comment` as the value.
