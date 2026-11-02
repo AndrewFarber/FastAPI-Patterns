@@ -3,26 +3,25 @@ title: "Auth settings"
 category: auth-security
 tags: [settings, authentication, oidc, jwt]
 status: draft
-related: ["[[0-settings-guide]]", "[[1a-settings-management]]", "[[1e-settings-lambda]]", "[[2c-settings-auth-cognito]]", "[[layout-by-layer]]"]
+related: ["[[0-settings-guide]]", "[[1a-settings-management]]", "[[2c-settings-auth-cognito]]", "[[layout-by-layer]]"]
 ---
 
 # Auth settings
 
-## Problem
-Apps that sign their own tokens must store and rotate a signing secret, and a leaked secret lets anyone mint valid tokens. Delegating sign-in to an identity provider (IdP) removes the secret, but the API still needs the right values to verify the provider's tokens: who issued them, where the signing keys are, who they were issued for, and which algorithms to trust.
+Delegate sign-in to an identity provider and keep only the *public* values needed to verify its JWTs: issuer, JWKS URL, audiences, required claims, asymmetric algorithms. The same model fits every OIDC provider; switching providers changes env vars only.
 
-## Use when
-- Users sign in through an OpenID Connect / OAuth 2.0 identity provider (AWS Cognito, Auth0, Okta, Microsoft Entra ID, Keycloak) and the API verifies the JWTs it issues.
+## Fits when
+- Users sign in through an OIDC / OAuth 2.0 provider (Cognito, Auth0, Okta, Entra ID, Keycloak) and the API verifies its access tokens.
 
-## Avoid when
-- The app issues its own tokens. That needs a signing key in settings (`SecretStr`) and is a different pattern.
-- The API sits behind a gateway that already verifies tokens and forwards trusted claims (e.g. API Gateway with a JWT authorizer). Configure the gateway instead. A Lambda Function URL is not such a gateway: it offers only `NONE` or IAM (SigV4) auth, so the app verifies user tokens itself.
+Not when:
+- The app issues its own tokens: that needs a signing key and is a different pattern.
+- A gateway already verifies tokens and forwards trusted claims (API Gateway with a JWT authorizer). A Lambda Function URL is not such a gateway.
 
-## Solution
+## Signals
+- **Feature:** "add login", "protect the endpoints", "verify JWTs", switching identity providers.
+- **Code:** `jwt_secret` or `SECRET_KEY` with an external provider; `algorithms=["HS256"]` or `verify_aud=False` / `options={"verify_aud": False}`; the JWKS fetched per request; issuer typed as `HttpUrl`.
 
-### The settings model
-The same fields describe any provider; only their values differ.
-
+## Pattern
 ```python
 # app/config/auth.py
 from typing import Literal, Self
@@ -66,39 +65,25 @@ class AuthSettings(BaseModel):
         return self.jwks_url or f"{self.issuer.rstrip('/')}/.well-known/jwks.json"
 ```
 
-- **No secrets here.** The provider signs tokens with its private keys; the API only needs public values to fetch the signing keys and check the claims. Token verification itself lives in `security/` (a separate note, not written yet).
-- **Settings, not code, per provider.** Switching providers or environments changes env vars only.
-- **Plain env vars are fine here.** Every value is public, so the deployed function sets them directly (`AUTH__ISSUER`, `AUTH__AUDIENCES`); keep `audiences` short, all env vars share 4 KB on Lambda ([[1e-settings-lambda]]).
+Verification itself lives in `security/` (pure helpers) and is handed to routes by `dependencies/` ([[layout-by-layer]]).
 
-### On Lambda
-- **The app is the only check.** The Function URL uses auth type `NONE`, so every route except the readiness path (`/healthz`) must depend on token verification.
-- **The JWKS cache lives per execution environment.** Each new environment fetches the keys again on its first token, so a burst of cold starts is a burst of JWKS requests to the provider. Fetch with a short timeout, and lazily on the first request, not at init: a slow provider would otherwise fail init ([[1e-settings-lambda]]).
+## Rules
+- **No secrets.** The provider signs with its private keys; every field is public, so plain env vars are fine.
+- **Exact issuer as `str`.** `iss` must match character for character; `HttpUrl` adds or keeps a trailing slash. Copy `issuer` and `jwks_uri` from `<issuer>/.well-known/openid-configuration`.
+- **Audience is required** (`min_length=1`); `audience_claim` covers providers that use another claim ([[2c-settings-auth-cognito]]).
+- **Asymmetric algorithms only,** enforced by the `Literal`.
+- **HTTPS only,** enforced by the validator.
+- **Cache the JWKS** for `jwks_cache_ttl_seconds`; refetch early only for an unknown `kid`. Fetch lazily on the first request, not at startup, so a slow provider can't fail startup.
+- **Every route but `/healthz` depends on verification** when nothing in front of the app checks tokens.
 
-### Provider values
-
-| Provider | `issuer` | `jwks_url` | `audience_claim` |
-|---|---|---|---|
-| AWS Cognito (access tokens) | `https://cognito-idp.<region>.amazonaws.com/<pool-id>` | default | `client_id`, plus `token_use: access` |
-| Auth0 | `https://<tenant>.auth0.com/` (trailing slash) | default | `aud` (the API identifier) |
-| Okta (custom authorization server) | `https://<org>.okta.com/oauth2/<server-id>` | `<issuer>/v1/keys` | `aud` |
-| Microsoft Entra ID (v2 tokens) | `https://login.microsoftonline.com/<tenant-id>/v2.0` | `https://login.microsoftonline.com/<tenant-id>/discovery/v2.0/keys` | `aud` |
-
-Every OIDC provider lists its exact `issuer` and `jwks_uri` at `<issuer>/.well-known/openid-configuration`. Copy them from there rather than guessing.
-
-Provider-specific setup: AWS Cognito in [[2c-settings-auth-cognito]].
-
-## Pitfalls
-- **Keeping a signing secret "just in case".** With an external provider the app never signs tokens; a `jwt_secret` field is dead configuration that someone will eventually use.
-- **Issuer typos and trailing slashes.** `iss` must match exactly. `https://example.auth0.com` and `https://example.auth0.com/` are different issuers.
-- **Skipping the audience check.** Without it, any token from the same provider (issued for another app) is accepted.
-- **Accepting ID tokens at the API.** ID tokens describe the user to the client app; APIs should accept access tokens.
-- **Allowing symmetric or `none` algorithms.** An attacker could sign tokens with the public key as an HMAC secret, or not sign them at all. The `Literal` allows asymmetric algorithms only.
-- **Turning on Function URL IAM auth for user tokens.** `AWS_IAM` expects SigV4-signed requests from AWS principals; browser clients with a JWT are rejected before the app sees them.
-- **Fetching the JWKS on every request.** Cache the keys for `jwks_cache_ttl_seconds`, and refetch early only when a token's `kid` isn't in the cache (the provider rotated its keys).
+## Anti-patterns
+- **A signing secret "just in case".** Dead configuration someone will use.
+- **Skipping the audience check.** Tokens issued for other apps pass.
+- **Accepting ID tokens.** APIs accept access tokens.
+- **`HS256` or `none`.** The public key becomes an HMAC secret, or tokens go unsigned.
 
 ## Related
 - [[0-settings-guide]]
 - [[1a-settings-management]]
-- [[1e-settings-lambda]]
 - [[2c-settings-auth-cognito]]
 - [[layout-by-layer]]

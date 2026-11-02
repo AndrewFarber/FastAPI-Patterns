@@ -3,24 +3,25 @@ title: "Rotated DB passwords"
 category: persistence
 tags: [settings, database, secrets-rotation, secrets-manager]
 status: draft
-related: ["[[2b-settings-db]]", "[[4a-settings-refreshing-values-cache]]", "[[1e-settings-lambda]]"]
+related: ["[[2b-settings-db]]", "[[2b-settings-db-iam-auth]]", "[[4a-settings-refreshing-values-cache]]"]
 ---
 
 # Rotated DB passwords
 
-## Problem
-With Secrets Manager rotation, the DB password changes under a running app. A password read once at startup (or put into a Lambda env var at deploy time) works until the next rotation; after that, every new connection fails until the execution environment is replaced.
+Settings hold the secret's ID, not the password. A `do_connect` hook reads the current credentials from a TTL cache per new connection, and retries once if the secret changed. The app keeps connecting through a rotation without a restart.
 
-## Use when
-- The DB password lives in Secrets Manager with rotation enabled (AWS setup below).
+## Fits when
+- The DB password lives in Secrets Manager with rotation enabled.
 
-## Avoid when
-- The app uses IAM authentication ([[2b-settings-db-iam-auth]]): tokens are generated per connection, so there is nothing to rotate.
-- The password never rotates: use `PasswordAuth` ([[2b-settings-db]]).
+Not when:
+- IAM authentication is possible: nothing to rotate ([[2b-settings-db-iam-auth]]).
+- The password never rotates: `PasswordAuth` ([[2b-settings-db]]).
 
-## Solution
-`RotatedSecretAuth` has its own module and is part of the `DbAuth` union in `app/config/db.py` ([[2b-settings-db]]):
+## Signals
+- **Feature:** "rotate the DB password", "Secrets Manager rotation", connections failing after a rotation.
+- **Code:** the password read once at startup into `PasswordAuth` or an env var; `{{resolve:secretsmanager:...}}` in deploy config; `get_secret_value` without a cache on every connection.
 
+## Pattern
 ```python
 # app/config/db_rotated.py
 from typing import Literal
@@ -38,8 +39,6 @@ class RotatedSecretAuth(BaseModel):
     region: str
     ttl_seconds: float = Field(default=300, gt=0)   # how long to cache the secret
 ```
-
-Fetch the current password per *new* connection through SQLAlchemy's `do_connect` event, using the cache from [[4a-settings-refreshing-values-cache]]. Pooled connections stay open; only new ones need the new password.
 
 ```python
 # app/db/rotated_password.py
@@ -80,35 +79,17 @@ def add_rotated_password(engine: Engine, db: DbSettings) -> None:
 
 `build_engine()` ([[2b-settings-db]]) calls `add_rotated_password()` when `db.auth` is a `RotatedSecretAuth`.
 
-```bash
-DB__AUTH__METHOD=rotated_secret
-DB__AUTH__SECRET_ID=arn:aws:secretsmanager:us-east-1:123456789012:secret:orders/prd/db-app-AbCdEf
-DB__AUTH__REGION=us-east-1
-```
+## Rules
+- **Read per new connection, through the cache** ([[4a-settings-refreshing-values-cache]]). Pooled connections stay open.
+- **Retry once, only when the secret changed.** libpq gives connection errors no SQLSTATE, so an auth failure looks like an outage; comparing secrets keeps an outage to one timeout.
+- **Take `username` from the secret too.** Alternating-users rotation switches between two users.
+- **The app user gets its own secret,** never the master's. Behind RDS Proxy rotate single-user (the proxy can't alternate); or authenticate to the proxy with IAM and drop this hook.
 
-- **Retry once, only with a different secret.** Between a rotation and the cache expiring, the cached password is wrong; the failed connection invalidates it and refetches. libpq reports no SQLSTATE for connection failures, so an auth error looks like an outage. Retrying only when the secret changed keeps an outage to one connect timeout instead of two.
-- **Use `username` from the secret too.** Alternating-users rotation switches between two users (`orders_app` and `orders_app_clone`), so the username changes as well.
-- **`DB__USER` is still required** by `DbSettings`; set it to the app user. The secret's username replaces it on each connection.
-
-### On Lambda
-- **Grant read, pass the ARN.** The function's env vars carry only the secret's ARN in `DB__AUTH__SECRET_ID`, and its role may call `secretsmanager:GetSecretValue` on that secret. The password never appears in the function configuration.
-- **The cache lives per execution environment** ([[1e-settings-lambda]]). Each new environment fetches the secret on its first connection; with a pool of one, that is usually the only fetch until the TTL expires.
-- **Alternatives to the cache:** the AWS Parameters and Secrets Lambda Extension (`localhost:2773`, added to the image like any extension) or Powertools' `parameters.get_secret(..., max_age=...)`. The retry on a failed connection is still needed.
-- **Behind RDS Proxy** the proxy reads the secret itself; authenticating to it with IAM removes this hook ([[2b-settings-db-rds-tls]]).
-
-### AWS setup
-- **Two secrets.** The master user's, rotated with the single-user strategy and used only by administrators and the rotation function. The app user's, rotated with the alternating-users strategy and read by the app. Never give the app the master secret.
-- **The app user exists first.** Create `orders_app` with its grants (e.g. in a migration) before the first rotation: alternating-users rotation clones an existing user. Its secret holds `masterarn`, the master secret that rotation uses to change passwords.
-- **Behind RDS Proxy, rotate single-user.** The proxy doesn't support the alternating-users strategy, so secrets it reads use single-user rotation ([[2b-settings-db-rds-tls]]).
-- **The rotation function needs a route to Secrets Manager.** It runs in the database's VPC: give it a NAT gateway or a Secrets Manager VPC interface endpoint.
-- **Schedule:** 30 days is common. Each rotation makes cached passwords wrong until the retry above refetches them.
-
-## Pitfalls
-- **The rotated password in an env var.** A Lambda env var (including `{{resolve:secretsmanager:...}}`) is resolved at deploy time and frozen into the published version: it breaks at the first rotation and is readable via `GetFunctionConfiguration`.
-- **Retrying on every connection error.** A database outage then takes twice as long to surface. Retry once, and only when the secret changed.
-- **Ignoring `username`.** Alternating-users rotation changes it.
+## Anti-patterns
+- **The password in an env var.** Frozen at deploy, broken at the first rotation, readable in the function configuration.
+- **Retrying on every connection error.** A database outage takes twice as long to surface.
 
 ## Related
 - [[2b-settings-db]]
+- [[2b-settings-db-iam-auth]]
 - [[4a-settings-refreshing-values-cache]]
-- [[1e-settings-lambda]]

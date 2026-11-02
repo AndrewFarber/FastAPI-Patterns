@@ -3,23 +3,24 @@ title: "Caching live values from AWS"
 category: project-structure
 tags: [settings, caching, aws, secrets-manager, parameter-store]
 status: draft
-related: ["[[4a-settings-refreshing-values]]", "[[1e-settings-lambda]]", "[[2b-settings-db-rotated-password]]", "[[3b-settings-aws-sources]]"]
+related: ["[[4a-settings-refreshing-values]]", "[[2b-settings-db-rotated-password]]", "[[3b-settings-aws-sources]]"]
 ---
 
 # Caching live values from AWS
 
-## Problem
-A few values must stay current while the app runs. Fetching them from AWS on every use is slow and costly; caching them naively lets a burst of requests all refetch at once, and an AWS outage fails every request or makes each one wait for a timeout.
+Settings hold only *where* and *how often* to fetch; a `TtlCache` client in `clients/` fetches the live value. One fetch per expired key, the old value while it refreshes, and the last good value with a backoff when the source is down.
 
-## Use when
+## Fits when
 - Individual secrets or parameters change while the app runs and are read per request or per connection.
 
-## Avoid when
-- A redeploy is acceptable, or the value is read once at init ([[3b-settings-aws-sources]]).
+Not when:
+- A redeploy is acceptable, or the value is read once at startup ([[3b-settings-aws-sources]]).
 
-## Solution
-Keep `Settings` immutable. It holds only *where* and *how often* to fetch. A cache client in `clients/`, created at startup (at init on Lambda), fetches the live value.
+## Signals
+- **Feature:** "cache the secret", "don't call Secrets Manager on every request", rotated values.
+- **Code:** `get_secret_value` / `get_parameter` per request; `functools.lru_cache` on a fetch (never expires); a hand-rolled `dict` cache without a lock; boto3 clients with default timeouts on the request path.
 
+## Pattern
 ```python
 # app/clients/ttl_cache.py
 import logging
@@ -101,30 +102,19 @@ def parameter_store_cache(region: str, ttl_seconds: float) -> TtlCache:
     return TtlCache(lambda name: client.get_parameter(Name=name, WithDecryption=True)["Parameter"]["Value"], ttl_seconds)
 ```
 
-- **One fetch per expiry.** The per-key lock lets one thread fetch; the others get the old value straight away, and wait only when there is no value yet.
-- **Last good value on errors.** A Secrets Manager outage doesn't take the app down; the warning shows it in the logs. After a failed fetch the next try waits `retry_seconds` (30 s, at most the TTL), so an outage costs one slow call per backoff, not one per request.
-- **`invalidate()`** forces the next read to fetch, e.g. after a value is known to be wrong ([[2b-settings-db-rotated-password]]). It keeps the old value as the fallback.
+## Rules
+- **Settings stay immutable;** the cache is a client built at startup.
+- **Stampede protection:** a per-key lock; other threads get the old value at once and wait only when there is none.
+- **Last good value on errors,** with one warning and a `retry_seconds` backoff; raise only when there has never been a value.
+- **`invalidate()` keeps the fallback** and forces the next read to fetch ([[2b-settings-db-rotated-password]]).
+- **Short boto3 timeouts on the request path** (1 s connect, 2 s read, 2 attempts).
+- **TTLs in minutes for secrets.** Each fetch is a billed, throttled API call, once per process.
 
-### On Lambda
-- The cache lives per execution environment ([[1e-settings-lambda]]). Each environment fetches on its first use and refreshes on its own, so 100 warm environments make up to 100 calls per TTL.
-- Each environment handles one request at a time, so the lock rarely has anyone to hold back; it matters on threaded servers. The backoff and the last good value matter on Lambda too.
-- A fetch during a request adds its latency to that request, which is why the clients above use short boto3 timeouts.
-- SnapStart doesn't apply: it doesn't support container images.
-
-### Alternatives
-- The AWS Parameters and Secrets Lambda Extension caches Secrets Manager and Parameter Store values in a local HTTP server (`localhost:2773`, 300 s TTL by default). It ships as a layer; a container image has to copy its files into `/opt`, like the AppConfig agent ([[2f-settings-feature-flags-appconfig]]).
-- The Powertools for AWS Lambda parameters utility caches values in process, with a `max_age` per call.
-- `aws-secretsmanager-caching`, an off-the-shelf cache for Secrets Manager with a one-hour default refresh.
-
-## Pitfalls
-- **No stampede protection.** Without the per-key lock, every request that sees an expired value calls AWS at once.
-- **No backoff after a failed fetch.** Every request then retries AWS and waits for the timeout before getting the old value.
-- **Failing requests on refresh errors.** Serve the last good value and log; fail only when there has never been a value.
-- **Stale values forever.** "Last good value" hides a permanent outage. Alert on the refresh warnings.
-- **Short TTLs.** Each fetch is an AWS API call with cost and throttling limits. Minutes, not seconds, for secrets.
+## Anti-patterns
+- **No backoff.** During an outage every request waits for the timeout.
+- **Stale forever without alerting.** "Last good value" hides a permanent outage; alert on the warning.
 
 ## Related
 - [[4a-settings-refreshing-values]]
-- [[1e-settings-lambda]]
 - [[2b-settings-db-rotated-password]]
 - [[3b-settings-aws-sources]]

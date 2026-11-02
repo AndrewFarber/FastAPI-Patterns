@@ -3,62 +3,25 @@ title: "Runtime feature flags"
 category: project-structure
 tags: [settings, feature-flags, aws-appconfig]
 status: draft
-related: ["[[2f-settings-feature-flags]]", "[[1e-settings-lambda]]", "[[1d-settings-deployments-appconfig-rollouts]]", "[[4a-settings-refreshing-values]]"]
+related: ["[[2f-settings-feature-flags]]", "[[1d-settings-deployments]]", "[[4a-settings-refreshing-values]]"]
 ---
 
 # Runtime feature flags
 
-## Problem
-Kill switches and gradual rollouts must change within minutes, without a deploy. Static flags in `FeatureSettings` ([[2f-settings-feature-flags]]) only change on redeploy.
+Flags that change without a deploy are a typed `RuntimeFlags` model read from the AppConfig Agent on localhost, through a client cached per process and a `RuntimeFlagsDep`. Defaults are the safe state, and a failed read keeps the last good flags.
 
-## Use when
+## Fits when
 - A flag must change while the app runs: kill switches, gradual rollouts, operational toggles.
 
-## Avoid when
-- The flag only changes per environment or release. Use static flags ([[2f-settings-feature-flags]]).
+Not when:
+- It only changes per environment or release: [[2f-settings-feature-flags]].
 
-## Solution
-AWS AppConfig holds flags that change without a deploy. On Lambda, AWS ships AppConfig Agent as a Lambda extension: added to the container image, it starts with each execution environment, fetches the flags, caches them, refreshes them at most every `AWS_APPCONFIG_EXTENSION_POLL_INTERVAL_SECONDS` (45 s by default), and serves them on `localhost:2772`. The app makes a cheap local HTTP call per read.
+## Signals
+- **Feature:** "kill switch", "turn it off without a deploy", "roll out to 10%".
+- **Code:** calls to the AppConfig API (`appconfigdata`) from the app; flags as `dict[str, bool]` lookups; flag reads that raise on failure; runtime flags mixed into `FeatureSettings`.
 
-### Add the extension to the image
-AWS publishes the agent as a Lambda layer; a container image can't use layers, so the build unzips the layer into `/opt`. Download it next to the Dockerfile first, for the function's region and architecture (layer ARNs are listed in the AppConfig docs):
-
-```bash
-aws lambda get-layer-version-by-arn \
-  --arn arn:aws:lambda:us-east-1:027255383542:layer:AWS-AppConfig-Extension:<version> \
-  --query Content.Location --output text | xargs curl -o settings/appconfig-extension.zip
-```
-
-```dockerfile
-# Dockerfile (fragment): additions to the Dockerfile in 1e-settings-lambda
-# A new first stage that unpacks the layer, from the same pinned image as the final stage
-FROM public.ecr.aws/docker/library/python:3.14-slim@sha256:930e1abba7c4e8f96ed93e8012c35d174d7732752731bbd5e8e757d7ec6f3966 AS appconfig-extension
-RUN apt-get update && apt-get install -y --no-install-recommends unzip   # keeps the binaries' exec bits
-COPY settings/appconfig-extension.zip /tmp/
-RUN unzip /tmp/appconfig-extension.zip -d /opt
-
-# In the final stage, right after its FROM
-# COPY merges into /opt: the agent lands next to the Lambda Web Adapter in /opt/extensions
-COPY --from=appconfig-extension /opt /opt
-```
-
-- **Not in the example image.** The vault's Dockerfile leaves the agent out, so building it needs no AWS download; `AppConfigFlags` is tested against a fake agent instead.
-- **Git-ignore the zip:** it is a downloaded binary, fetched again for each build.
-
-### Point the function at it
-```bash
-# The function's env vars. Where the app reads the runtime flags: the AppConfig environment is named per stage
-FEATURES__RUNTIME_FLAGS__APPLICATION=orders-api
-FEATURES__RUNTIME_FLAGS__ENVIRONMENT=prd
-# The agent fetches these during its own init, before the app's, so the first read is a cache hit
-AWS_APPCONFIG_EXTENSION_PREFETCH_LIST=/applications/orders-api/environments/prd/configurations/runtime-flags
-```
-
-The agent calls AppConfig with the function's role, which needs `appconfig:StartConfigurationSession` and `appconfig:GetLatestConfiguration` on the flags' configuration profile: `arn:aws:appconfig:<region>:<account>:application/<app-id>/environment/<env-id>/configuration/<profile-id>`, not `application/*`.
-
-`FEATURES__RUNTIME_FLAGS__*` fills `FeatureSettings.runtime_flags` ([[2f-settings-feature-flags]]). Locally it stays unset: no agent, no HTTP calls, flags keep their defaults.
-
-### Read the flags in the app
+## Pattern
+`FeatureSettings.runtime_flags` ([[2f-settings-feature-flags]]) says where the agent finds the flags; unset locally, so flags keep their defaults.
 
 ```python
 # app/clients/runtime_flags.py
@@ -147,22 +110,21 @@ def get_runtime_flags() -> RuntimeFlags:
 RuntimeFlagsDep = Annotated[RuntimeFlags, Depends(get_runtime_flags)]
 ```
 
-- **Typed flags,** as with static flags: `flags.payments_kill_switch`, not a string lookup.
-- **Fail safe:** defaults are the safe state (kill switch off means payments on; rollouts off). A failed read (agent down or slow, a payload that isn't `{"flag": {"enabled": bool}}`) keeps the last good flags, logs one warning, and skips the agent for `retry_after_seconds` so requests don't each wait on it.
-- **One client per execution environment,** cached like `get_settings()` ([[1b-settings-access]]); nothing on `app.state`. Each environment's agent polls on its own, so for up to one poll interval some environments see a flag change before others ([[1e-settings-lambda]]).
-- The agent handles AppConfig authentication, polling, and caching; the app never calls the AppConfig API.
-- **Roll flag changes out gradually** with an AppConfig deployment strategy, so a bad flag can be caught and rolled back ([[1d-settings-deployments-appconfig-rollouts]]).
+## Rules
+- **Typed flags,** like static ones: `flags.payments_kill_switch`.
+- **Safe defaults:** kill switch off = payments on, rollouts off. They apply until the first read and whenever reads fail with nothing cached.
+- **Fail safe, fail quiet, back off:** a failed read logs one warning, keeps the last good flags, and skips the agent for `retry_after_seconds`.
+- **`extra="ignore"` on `RuntimeFlags`,** unlike settings: a flag can be added in AppConfig before the code that reads it.
+- **One client per process,** `lru_cache`d like `get_settings()`; nothing on `app.state`.
+- **The agent does auth, polling, and caching.** On Lambda it's an extension in `/opt/extensions`; the role needs `appconfig:StartConfigurationSession` and `GetLatestConfiguration` on the profile.
+- **Roll flag changes out with an AppConfig deployment strategy** (e.g. linear 20%), with alarms that roll it back. The app's canary doesn't cover them ([[1d-settings-deployments]]). Kill switches use `AllAtOnce`, ideally in their own AppConfig environment so a running rollout can't block them.
 
-## Pitfalls
-- **Unsafe defaults.** Until the first successful read, and whenever reads fail with nothing cached, flags take their defaults. Make the default the safe state.
-- **Silent failures.** A broken agent leaves flags frozen at their last values. Alert on the warning.
-- **No extension in the image, or no IAM permissions.** Every read fails and every flag stays at its default, with no error at init. The warning in the logs is the only sign.
-- **Deriving the AppConfig environment from `is_prd`.** `"prd" if is_prd else "dev"` points staging at dev's flags. Name the environment per stage.
-- **Forgetting `FEATURES__RUNTIME_FLAGS__*` in a deployed stage.** The app then never asks the agent and flags keep their defaults. Set them next to `AWS_APPCONFIG_EXTENSION_PREFETCH_LIST`.
-- **Mixing static and runtime flags.** Keep release toggles in `FeatureSettings`; only operational toggles belong here.
+## Anti-patterns
+- **Unsafe defaults.** A broken agent turns them on.
+- **Silent failures.** Alert on the warning: no agent or no IAM permission leaves every flag at its default with no startup error.
+- **Deriving the AppConfig environment from `is_prd`.** Name it per stage.
 
 ## Related
 - [[2f-settings-feature-flags]]
-- [[1e-settings-lambda]]
-- [[1d-settings-deployments-appconfig-rollouts]]
+- [[1d-settings-deployments]]
 - [[4a-settings-refreshing-values]]

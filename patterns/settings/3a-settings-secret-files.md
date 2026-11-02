@@ -3,24 +3,25 @@ title: "Secrets mounted as files"
 category: project-structure
 tags: [settings, secrets, docker-compose, local-development]
 status: draft
-related: ["[[1a-settings-management]]", "[[1e-settings-lambda]]", "[[3b-settings-aws-sources]]"]
+related: ["[[1a-settings-management]]", "[[3b-settings-aws-sources]]"]
 ---
 
 # Secrets mounted as files
 
-## Problem
-Running the image locally with docker-compose needs a dev database password. As a plain env var it sits in `compose.yaml` and shows up in `docker inspect`; compose `secrets:` mount it as a file instead. Lambda has no file-mounted secrets, so the same `Settings` must read files locally and ignore them when deployed. pydantic-settings' default secrets source also only reads top-level fields, so secrets for nested sub-models are silently ignored.
+Add a nested secrets-files source to `Settings` only when `SECRETS_DIR` is set. Locally, docker-compose mounts secrets as files named like env vars; deployed, the same code adds no source.
 
-## Use when
-- Running the app's image locally with docker-compose, against a local database, with no AWS access.
+## Fits when
+- Running the image locally with docker-compose, against a local database, without AWS access.
 
-## Avoid when
-- Deployed on Lambda: there is nothing to mount, the image's filesystem is read-only apart from `/tmp` ([[1e-settings-lambda]]), and the app reads Secrets Manager itself ([[3b-settings-aws-sources-pydantic]]).
-- Plain env vars from a shell or `.env` file are good enough for the dev password.
+Not when:
+- Deployed on Lambda: nothing to mount; the app reads Secrets Manager ([[3b-settings-aws-sources]]).
+- Plain env vars from a shell are good enough for the dev password.
 
-## Solution
-Add the files source only when `SECRETS_DIR` is set, like the AWS sources in [[3b-settings-aws-sources-pydantic]]. Compose sets it; Lambda and tests don't.
+## Signals
+- **Feature:** "docker-compose for local dev", "keep the dev password out of compose.yaml".
+- **Code:** `secrets_dir=` in `SettingsConfigDict` (top-level fields only, nested ones silently skipped); passwords in `compose.yaml` `environment:`; secrets copied to `/tmp` at startup.
 
+## Pattern
 ```python
 # app/config/settings.py (fragment)
 import os
@@ -41,7 +42,7 @@ class Settings(BaseSettings):
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         sources = [init_settings, env_settings]
-        # Only when configured: set by docker-compose, unset on Lambda
+        # Only when configured: set by docker-compose, unset when deployed
         if secrets_dir := os.environ.get("SECRETS_DIR"):
             # file db__auth__password -> settings.db.auth.password; a wrong path fails startup
             sources.append(
@@ -54,10 +55,6 @@ class Settings(BaseSettings):
 # compose.yaml (fragment)
 services:
   api:
-    image: orders-api:dev
-    # The image's CMD listens on 127.0.0.1 for the Lambda Web Adapter; listen on all interfaces here
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
-    ports: ["8080:8080"]
     environment:
       SECRETS_DIR: /run/secrets
       DB__HOST: db
@@ -71,17 +68,16 @@ secrets:
     file: ./secrets/db_password.txt         # git-ignored
 ```
 
-- **File names match env var names:** `/run/secrets/db__auth__password` fills `settings.db.auth.password`.
-- **Env vars win** over files, so a single value can still be overridden.
-- **Deployed, the same code adds no files source**: `SECRETS_DIR` is not in the function's env vars.
+## Rules
+- **Sources are opt-in by env var,** the same switch style as the AWS sources ([[3b-settings-aws-sources]]); tests and deployed environments get none.
+- **File names are env var names,** lower-case with `__`.
+- **Env vars win over files,** so one value can still be overridden.
+- **`secrets_dir_missing="error"`:** a mistyped path fails startup instead of logging a warning.
 
-## Pitfalls
-- **Using the default secrets source.** It skips nested fields without any error; use `NestedSecretsSettingsSource`.
-- **The default `secrets_dir_missing="warn"`.** A mistyped path only logs a warning and every secret is missing; `"error"` fails startup instead.
-- **Baking secrets into the image** to read them as files on Lambda. Anyone who can pull the image from ECR can read them.
-- **Writing secrets to `/tmp`** at init so this source can read them. It adds a copy on disk for nothing; the AWS sources put the values straight into `Settings`.
+## Anti-patterns
+- **The default secrets source.** Skips nested fields without an error.
+- **Baking secrets into the image** to read as files. Anyone who can pull it reads them.
 
 ## Related
 - [[1a-settings-management]]
-- [[1e-settings-lambda]]
 - [[3b-settings-aws-sources]]

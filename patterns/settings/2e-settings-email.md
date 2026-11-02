@@ -3,22 +3,25 @@ title: "Email settings"
 category: project-structure
 tags: [settings, email, smtp]
 status: draft
-related: ["[[1a-settings-management]]", "[[3b-settings-aws-sources-pydantic]]"]
+related: ["[[1a-settings-management]]", "[[3b-settings-aws-sources]]"]
 ---
 
 # Email settings
 
-## Problem
-SMTP configuration is easy to get subtly wrong: a port that doesn't match the TLS mode, a username without a password, an invalid sender address that only fails at the first send.
+An optional subsystem: `email: EmailSettings | None = None` on the root, with a validator that rejects inconsistent combinations (port vs TLS mode, username without password) at startup instead of at the first send.
 
-## Use when
-- The app sends email over SMTP.
+## Fits when
+- The app sends email over SMTP. The shape (optional sub-model + cross-field validator) fits any optional integration.
 
-## Avoid when
-- The app runs on AWS and sends through SES: use the SES v2 API (`boto3.client("sesv2").send_email`) with the function's role instead. SES SMTP credentials are a long-lived IAM access key that has to be stored and rotated by hand; the role needs neither.
-- The app sends through another provider's HTTP API. That needs an HTTP client, not SMTP settings.
+Not when:
+- On AWS with SES: use the SES v2 API with the app's role; SMTP credentials are a long-lived key.
+- A provider's HTTP API: that's a client in `clients/`, not SMTP settings.
 
-## Solution
+## Signals
+- **Feature:** "send email", "notifications by mail", any integration that may be switched off.
+- **Code:** `email_enabled: bool` next to the email fields; `use_tls: bool`; sender as plain `str`; SMTP password as `str` or in a plain env var.
+
+## Pattern
 ```python
 # app/config/email.py
 from typing import Literal, Self
@@ -52,24 +55,17 @@ class EmailSettings(BaseModel):
     email: EmailSettings | None = None   # None = email disabled
 ```
 
-```bash
-# Local development: a mail catcher such as Mailpit, no credentials
-EMAIL__SMTP_HOST=localhost
-EMAIL__SMTP_PORT=1025
-EMAIL__SECURITY=none
-EMAIL__FROM_ADDRESS=orders@example.com
-```
+## Rules
+- **`None` means disabled.** With no `EMAIL__*` set, code skips sending; setting any of them requires the rest.
+- **`security: Literal["starttls", "tls", "none"]`, not `use_tls`.** 587 is STARTTLS, 465 is TLS; a bool can't say which.
+- **Cross-field rules in one `model_validator`:** both-or-neither credentials, no credentials without TLS, standard ports match their mode.
+- **`EmailStr`** for the sender (needs `email-validator`).
+- **The password is a secret:** deployed, it comes from Secrets Manager as `email--password` ([[3b-settings-aws-sources]]).
 
-- **Optional subsystem.** With no `EMAIL__*` set, `settings.email` is `None` and code skips sending. Setting any of them requires `smtp_host` and `from_address`.
-- **The validator rejects inconsistent combinations at startup:** a username without a password (or the reverse), credentials with `security="none"`, STARTTLS on 465 and TLS on 587.
-- **`security` instead of a `use_tls` bool.** Port 587 uses STARTTLS, port 465 uses TLS from the start; a bool can't say which.
-- **The password is a secret.** In deployed environments it goes into the app's Secrets Manager secret as `email--password`, read at init ([[3b-settings-aws-sources-pydantic]]), not into a plain `EMAIL__PASSWORD` env var ([[1a-settings-management]]). Host, port and sender stay ordinary env vars.
-
-## Pitfalls
-- **Port and security mismatch.** STARTTLS on 465 or TLS on 587 hangs or fails the handshake. The validator catches the standard ports; a custom port is up to you.
-- **`security="none"` outside local development.** Mail goes over the network in plain text; with credentials the validator rejects it.
-- **SMTP credentials in the function's env vars.** Anyone with `lambda:GetFunctionConfiguration` can read them ([[1e-settings-lambda]]).
+## Anti-patterns
+- **A separate `enabled` flag.** It can disagree with the fields.
+- **`security="none"` outside local development.** Mail and credentials in plain text.
 
 ## Related
 - [[1a-settings-management]]
-- [[3b-settings-aws-sources-pydantic]]
+- [[3b-settings-aws-sources]]

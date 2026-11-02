@@ -3,21 +3,24 @@ title: "Feature flag settings"
 category: project-structure
 tags: [settings, feature-flags]
 status: draft
-related: ["[[1a-settings-management]]", "[[1e-settings-lambda]]", "[[2f-settings-feature-flags-appconfig]]"]
+related: ["[[1a-settings-management]]", "[[2f-settings-feature-flags-appconfig]]"]
 ---
 
 # Feature flag settings
 
-## Problem
-Unfinished or risky features need to ship turned off and be turned on per environment. Ad hoc `if os.getenv("NEW_CHECKOUT")` checks are untyped, scattered, and never cleaned up.
+Static flags are typed bools on `FeatureSettings`, default off, changed by redeploying. Whole features are gated by mounting their router; behavior inside a feature by passing `FeatureSettings` into the service.
 
-## Use when
-- A feature should be on in some environments and off in others, changed by redeploying.
+## Fits when
+- A feature should be on in some environments and off in others.
 
-## Avoid when
-- The flag must change without a redeploy (kill switches, gradual rollouts). Use runtime flags from AWS AppConfig; see [[2f-settings-feature-flags-appconfig]].
+Not when:
+- It must change without a redeploy (kill switches, gradual rollouts): [[2f-settings-feature-flags-appconfig]].
 
-## Solution
+## Signals
+- **Feature:** "ship it turned off", "enable only in staging", "beta users".
+- **Code:** `if os.getenv("NEW_CHECKOUT")`; string lookups like `is_enabled("new_checkout")`; flags read from global settings inside a service; flag checks inside every route of a feature instead of one `include_router`.
+
+## Pattern
 ```python
 # app/config/features.py
 from pydantic import BaseModel, ConfigDict
@@ -49,15 +52,8 @@ class FeatureSettings(BaseModel):
     runtime_flags: RuntimeFlagsSource | None = None
 ```
 
-```bash
-FEATURES__NEW_CHECKOUT=true
-FEATURES__BETA_USERS='["user-123","user-456"]'
-```
-
-Two ways to use a flag:
-
 ```python
-# main.py (fragment): whole endpoints. When the flag is off, the routes don't exist (404, absent from OpenAPI docs)
+# main.py (fragment): whole endpoints. When off, the routes don't exist (404, absent from OpenAPI)
 if settings.features.bulk_export:
     app.include_router(exports.router)
 ```
@@ -74,18 +70,16 @@ class CheckoutService:
         return self._checkout_v1(cart)
 ```
 
-- **Pass `FeatureSettings` in, don't import settings.** The service gets only the flags it needs, and tests construct it with `FeatureSettings(new_checkout=True)`.
-- **Typed attributes, not string lookups.** `features.new_checkout` is checked by the type checker and autocompleted; `is_enabled("new_chekout")` fails silently.
-- **`beta_users` is a `frozenset`:** membership checks are constant time, and the frozen model stays immutable. The env var is still a JSON list.
-- **Changed by redeploying,** which on Lambda means publishing a new version: the env vars are frozen into it ([[1e-settings-lambda]]).
-- `runtime_flags` says where AppConfig Agent finds the runtime flags; see [[2f-settings-feature-flags-appconfig]].
+## Rules
+- **One bool per feature, named for it, default off.** A missing env var never releases a feature.
+- **Typed attributes, not string lookups.** The type checker catches `new_chekout`.
+- **Pass `FeatureSettings` in.** The service gets only flags, and tests build `FeatureSettings(new_checkout=True)`.
+- **Small ID sets as `frozenset`:** constant-time membership, immutable. Keep them to a handful; larger cohorts belong in AppConfig or a user attribute.
 
-## Pitfalls
-- **Flags that never die.** Once a feature is fully released, delete the field, the env var, and the old code path together.
-- **Defaults that turn features on.** Every flag defaults to off, so a missing env var never releases a feature.
-- **Long ID lists in env vars.** All of a Lambda function's env vars share 4 KB. Keep `beta_users` to a handful of IDs; larger cohorts belong in AppConfig or a user attribute.
+## Anti-patterns
+- **Flags that never die.** Once released, delete the field, the env var, and the old path together.
+- **Mixing static and runtime flags.** Release toggles here; operational toggles in AppConfig.
 
 ## Related
 - [[1a-settings-management]]
-- [[1e-settings-lambda]]
 - [[2f-settings-feature-flags-appconfig]]

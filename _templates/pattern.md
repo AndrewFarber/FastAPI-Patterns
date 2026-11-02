@@ -8,17 +8,27 @@ related: []
 
 # {{title}}
 
-## Problem
+One or two sentences: the pattern, and what it prevents.
 
-## Use when
+## Fits when
+- 
 
-## Avoid when
+Not when:
+- 
 
-## Solution
+## Signals
+- **Feature:** what a request or task says that calls for this pattern.
+- **Code:** greppable shapes in an existing codebase that this pattern would replace (`os.getenv(` outside `config/`).
+
+## Pattern
 ```python
 
 ```
 
-## Pitfalls
+## Rules
+- **Short rule.** Why, in one clause.
+
+## Anti-patterns
+- **What people do instead.** What goes wrong.
 
 ## Related

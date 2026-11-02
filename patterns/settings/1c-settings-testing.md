@@ -3,21 +3,21 @@ title: "Testing settings"
 category: testing
 tags: [settings, pytest, fixtures]
 status: draft
-related: ["[[1a-settings-management]]", "[[1b-settings-access]]"]
+related: ["[[1a-settings-management]]", "[[1b-settings-access]]", "[[3b-settings-aws-sources]]"]
 ---
 
 # Testing settings
 
-## Problem
-Tests need a complete, valid `Settings` without real secrets, and without a developer's own environment leaking in. Each access approach in [[1b-settings-access]] needs a different way to substitute it.
+Tests build settings from one dict of test values, through the environment rather than `dependency_overrides`, after clearing the developer's own settings variables. Every test gets a complete, valid `Settings` that no shell variable can change.
 
-## Use when
+## Fits when
 - Any test suite for an app that uses `Settings`.
 
-## Avoid when
-- Never.
+## Signals
+- **Feature:** adding tests, a new setting that tests need, flaky tests that pass on one machine.
+- **Code:** `os.environ[...] =` in tests; `dependency_overrides[get_settings]`; no `get_settings.cache_clear()`; `from app.main import app` at the top of `conftest.py`; helpers named `test_*`.
 
-## Solution
+## Pattern
 ```python
 # tests/conftest.py
 import json
@@ -100,20 +100,24 @@ def aws_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
 ```
 
-- **`clean_env`** runs for every test and removes the developer's own `APP__*`, `DB__*`, ... variables (one prefix per top-level field of `Settings`), so `APP__IS_PRD=true` left in a shell can't switch on prod-only validation in a test.
-- **`create_app`** hands a test the factory from `app.main`, imported only after `test_env`: importing `app.main` builds its module-level `app`, which needs a valid environment. Tests that need other values set them with `monkeypatch.setenv`, call `get_settings.cache_clear()`, then `create_app()`. The fixture restores the root logger that `create_app()` configured.
-- **Approach 3** (app factory) needs none of this: tests pass settings in, `create_app(make_test_settings())`.
-- **Approach 1** (module singleton) reads the environment at import time, so variables must be set before `app.config.settings` is first imported (e.g. at the top of `conftest.py`).
-- **Sub-models test on their own:** `FeatureSettings(new_checkout=True)`, `CorsSettings(allow_origins=[...])`. No root `Settings` needed.
-- **Optional sources** stay off in tests because `clean_env` removes the variables that turn them on: `AWS_SECRETS_MANAGER_SECRET_ID`, `AWS_SSM_PATH` ([[3b-settings-aws-sources-pydantic]]) and `SECRETS_DIR` ([[3a-settings-secret-files]]); see [[3b-settings-aws-sources-pydantic]] for testing them with `moto`.
-- **`aws_credentials`** sets fake AWS credentials for tests that use `moto` or sign IAM tokens offline, so no test can reach a real AWS account.
+- **`TEST_VALUES`** is the one source of test configuration; `make_test_settings()` builds a `Settings` from it, `make_test_env()` turns it into env vars.
+- **`clean_env`** (autouse) removes every env var whose prefix is a top-level `Settings` field, plus the AWS source switches, so `APP__IS_PRD=true` in a shell can't change a test.
+- **`create_app`** imports `app.main` only after `test_env`, because importing it builds the module-level app. Tests needing other values `monkeypatch.setenv`, `get_settings.cache_clear()`, then call it.
+- **Sub-models test on their own:** `FeatureSettings(new_checkout=True)`, no root `Settings` needed.
 
-## Pitfalls
-- **Partial overrides.** Init kwargs override env vars, but fields not passed still fall back to the environment. `clean_env` empties it of settings variables; still pass every value a test depends on.
-- **Importing `app.main` at the top of `conftest.py`.** Its module-level `create_app()` runs at collection time, before any fixture has set the environment.
-- **Helper names starting with `test_`.** pytest collects them as tests.
-- **Forgetting `cache_clear()`.** With approach 2, the first test's settings stay cached for the whole session.
+## Rules
+- **Set the environment, not overrides,** so startup code that calls `get_settings()` directly sees test values.
+- **`cache_clear()` before and after** each test that changes the environment.
+- **Pass every value a test depends on;** fields not passed fall back to the (cleaned) environment.
+- **Per access approach:** approach 3 needs none of this (`create_app(make_test_settings())`); approach 1 sets env vars before `app.config.settings` is first imported.
+- **AWS stays offline:** `aws_credentials` sets fake keys; AWS wiring is tested with `moto` ([[3b-settings-aws-sources]]).
+
+## Anti-patterns
+- **Importing `app.main` at the top of `conftest.py`.** Its `create_app()` runs at collection time, before any fixture.
+- **Helper names starting with `test_`.** pytest collects them.
+- **Forgetting `cache_clear()`.** The first test's settings stay cached for the session.
 
 ## Related
 - [[1a-settings-management]]
 - [[1b-settings-access]]
+- [[3b-settings-aws-sources]]

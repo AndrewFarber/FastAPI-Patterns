@@ -3,27 +3,26 @@ title: "Layout by layer"
 category: project-structure
 tags: [project-layout, layered-architecture]
 status: draft
-related: ["[[1a-settings-management]]"]
+related: ["[[1a-settings-management]]", "[[2c-settings-auth]]"]
 ---
 
 # Layout by layer
 
-## Problem
-Once an app outgrows a single file, code needs a predictable home. Without one, routes, queries, and business rules end up mixed together and nobody knows where new code should go.
+One top-level folder per technical layer, with dependencies pointing one way: routers call services, services call repositories. Every kind of code gets a predictable home, so routes, queries, and business rules don't mix.
 
-## Use when
-- Small to medium apps with a handful of domains (e.g. `users`, `orders`).
-- One team, or one developer, owns the whole codebase.
-- You want the structure most FastAPI tutorials and newcomers already recognize.
+## Fits when
+- A small to medium app with a handful of domains (`users`, `orders`), owned by one team.
+- The app has outgrown a single file, or new code has no obvious home.
 
-## Avoid when
-- The app has many domains (roughly 10+) or keeps adding them: group code by feature instead (a separate note, not written yet).
-- Multiple teams own different features.
-- Business logic is complex and should be independent of FastAPI and the database: use a hexagonal layout (a separate note, not written yet).
+Not when:
+- Many domains (roughly 10+) or several teams: group by feature instead (not written yet).
+- Business logic must be independent of FastAPI and the database: hexagonal layout (not written yet).
 
-## Solution
+## Signals
+- **Feature:** "add an endpoint/domain", "where should this go", "split up `main.py`".
+- **Code:** routes and SQL in the same file (`session.execute(` or `select(` under `routers/` or in `main.py`); `HTTPException` raised in services; ORM models returned from endpoints; `models.py`/`schemas.py` as single growing files.
 
-### Project root
+## Pattern
 ```
 project/
 ├── app/              application code (below)
@@ -34,10 +33,9 @@ project/
 └── Dockerfile
 ```
 
-### Application
 ```
 app/
-├── main.py           the app; app-wide modules (observability.py) sit next to it
+├── main.py
 ├── config/
 ├── db/
 ├── security/
@@ -53,28 +51,33 @@ app/
 └── tasks/
 ```
 
-### What each folder does
+| Folder          | Holds                                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------------------------------- |
+| `main.py`       | Creates the app, mounts routers, registers middleware and exception handlers. No business logic.              |
+| `config/`       | Settings: one sub-model per concern, composed in `settings.py`. See [[1a-settings-management]].               |
+| `db/`           | Engine, session factory, declarative base. Creates DB plumbing; doesn't hand it to requests.                  |
+| `security/`     | Pure helpers for verifying tokens (JWKS fetch and cache, claim checks). No FastAPI imports. See [[2c-settings-auth]]. |
+| `exceptions/`   | Domain exceptions (`OrderNotFound`) and the handlers that map them to HTTP responses.                         |
+| `middleware/`   | Cross-cutting request logic: CORS, timing, logging.                                                           |
+| `dependencies/` | `Depends()` functions: settings, DB session per request, current user, pagination.                           |
+| `routers/`      | HTTP only: paths, status codes, parsing, calling services.                                                    |
+| `schemas/`      | Pydantic request and response models (`UserCreate`, `UserRead`).                                             |
+| `models/`       | ORM models. Never returned directly from endpoints.                                                           |
+| `services/`     | Business rules and orchestration. Raise domain exceptions, never `HTTPException`. Add once logic outgrows CRUD. |
+| `repositories/` | All queries for one model. Add for testability or when storage may change. Also called `crud/`.               |
+| `clients/`      | Wrappers around external APIs and AWS services.                                                               |
+| `tasks/`        | Background work: `BackgroundTasks`, Celery, ARQ.                                                              |
 
-| Folder          | Responsibility                                                                                                                                            |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `main.py`       | Creates the app, mounts routers, registers middleware and exception handlers. No business logic. Small app-wide modules (`observability.py`) sit next to it. |
-| `config/`       | Settings (`pydantic-settings`): one sub-model per concern, composed in `settings.py`, read from env vars. See [[1a-settings-management]].                 |
-| `db/`           | Engine, session factory, ORM declarative base. Creates DB plumbing; does not hand it to requests.                                                         |
-| `security/`     | Pure helpers: verifying identity-provider tokens (JWKS fetch and cache, claim checks). No FastAPI imports. See [[2c-settings-auth]].                      |
-| `exceptions/`   | Domain exceptions (`OrderNotFound`) and the handlers that map them to HTTP responses.                                                                     |
-| `middleware/`   | Cross-cutting request logic: CORS, timing, logging.                                                                                                       |
-| `dependencies/` | `Depends()` functions that wire the layers into requests: settings, DB session per request, current user, pagination params.                              |
-| `routers/`      | HTTP only: paths, status codes, request parsing, calling services. No queries, no business rules.                                                         |
-| `schemas/`      | Pydantic models for request and response bodies (`UserCreate`, `UserRead`).                                                                               |
-| `models/`       | ORM models (SQLAlchemy tables). Not returned directly from endpoints.                                                                                     |
-| `services/`     | Business logic: rules, orchestration across models and clients. Raises domain exceptions, never `HTTPException`. Add once logic outgrows simple CRUD.     |
-| `repositories/` | All DB queries for one model. Services call repositories instead of writing queries. Add for testability or when storage may change. Also called `crud/`. |
-| `clients/`      | Wrappers around external APIs (payments, email, other services).                                                                                          |
-| `tasks/`        | Background work: FastAPI `BackgroundTasks`, Celery, ARQ.                                                                                                  |
-
-### Rules
+## Rules
 - **Dependency direction:** `routers → services → repositories → models`. Lower layers never import higher ones; nothing imports `routers/`.
-- **Plumbing vs wiring:** `db/` and `security/` create things; `dependencies/` hands them to requests (`dependencies/db.py` yields a session from `db/session.py`, `dependencies/auth.py` uses `security/tokens.py`).
+- **Plumbing vs wiring:** `db/` and `security/` create things; `dependencies/` hands them to requests (`dependencies/db.py` yields a session from `db/session.py`).
+- **One file per domain inside each layer:** `routers/orders.py`, `services/orders.py`, `schemas/orders.py`.
+
+## Anti-patterns
+- **Queries in routers.** The route can't be tested without a database, and the query can't be reused.
+- **`HTTPException` in services.** Ties business logic to HTTP; raise `OrderNotFound` and map it in `exceptions/`.
+- **Returning ORM models.** Leaks columns (password hashes) and couples the API to the table; return a schema.
 
 ## Related
 - [[1a-settings-management]]
+- [[2c-settings-auth]]

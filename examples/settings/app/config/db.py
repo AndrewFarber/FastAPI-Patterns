@@ -34,7 +34,7 @@ class DbSettings(BaseModel):
 
     # TLS: verify the server certificate by default
     sslmode: Literal["disable", "require", "verify-ca", "verify-full"] = "verify-full"
-    # A CA bundle file shipped in the image (2b-settings-db-rds-tls). Not "system":
+    # A CA bundle file shipped in the image (2b-settings-db). Not "system":
     # psycopg[binary]'s bundled OpenSSL looks for the OS trust store in a path that doesn't exist
     sslrootcert: FilePath | None = None
 

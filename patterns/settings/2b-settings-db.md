@@ -3,23 +3,24 @@ title: "DB settings"
 category: persistence
 tags: [settings, database, postgres, sqlalchemy]
 status: draft
-related: ["[[0-settings-guide]]", "[[1a-settings-management]]", "[[2b-settings-db-rds-tls]]", "[[2b-settings-db-iam-auth]]", "[[2b-settings-db-rotated-password]]", "[[1e-settings-lambda]]"]
+related: ["[[0-settings-guide]]", "[[1a-settings-management]]", "[[2b-settings-db-iam-auth]]", "[[2b-settings-db-rotated-password]]"]
 ---
 
 # DB settings
 
-## Problem
-Database configuration holds the app's most sensitive value (the password) and the one most often malformed (the connection URL). A single URL string leaks the password in logs and breaks on special characters, and connections without certificate verification can be intercepted.
+Store connection *parts*, not a URL, with authentication as a discriminated union of one model per method, and verified TLS by default. The password stays in a `SecretStr`, the URL is built only for the engine, and each auth method accepts only its own fields.
 
-## Use when
-- The app connects to PostgreSQL through SQLAlchemy and loads configuration as in [[1a-settings-management]].
+## Fits when
+- The app connects to PostgreSQL through SQLAlchemy and uses [[1a-settings-management]].
 
-## Avoid when
-- Another database or driver: keep the structure, but change the `scheme`, the DSN type (e.g. `MySQLDsn`), and the TLS details.
+Not when:
+- Another database: keep the structure, change `scheme`, the DSN type (`MySQLDsn`), and the TLS fields.
 
-## Solution
+## Signals
+- **Feature:** connecting to a database, adding a DB auth method, TLS to the database, pool tuning.
+- **Code:** `DATABASE_URL` or `url: PostgresDsn` as a field; `create_engine(os.getenv(...))`; `@computed_field` URL; `sslmode=require`; one model with `password`, `iam_region`, `secret_id` all optional; the engine created per request.
 
-### The settings model
+## Pattern
 ```python
 # app/config/db.py
 from typing import Annotated, Literal, Self
@@ -58,7 +59,7 @@ class DbSettings(BaseModel):
 
     # TLS: verify the server certificate by default
     sslmode: Literal["disable", "require", "verify-ca", "verify-full"] = "verify-full"
-    # A CA bundle file shipped in the image (2b-settings-db-rds-tls). Not "system":
+    # A CA bundle file shipped in the image (2b-settings-db). Not "system":
     # psycopg[binary]'s bundled OpenSSL looks for the OS trust store in a path that doesn't exist
     sslrootcert: FilePath | None = None
 
@@ -132,66 +133,26 @@ def build_engine(db: DbSettings, application_name: str) -> Engine:
     return engine
 ```
 
-The engine is created once in the lifespan and disposed on shutdown (the full `app/main.py` is in [[1b-settings-access]]):
+The engine is built once in the lifespan and disposed on shutdown ([[1b-settings-access]]).
 
-```python
-# app/main.py (fragment)
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    settings = get_settings()
-    app.state.engine = build_engine(settings.db, application_name=settings.app.name)
-    yield
-    app.state.engine.dispose()
-```
+## Rules
+- **Parts, not a URL.** `url` is a plain `@property` that `quote()`s the password; a computed field would appear in `repr()` and `model_dump()`.
+- **One auth model per method,** selected by `method`. `extra="forbid"` then rejects a password set alongside IAM. Methods without a static password add a connect hook in `build_engine()` ([[2b-settings-db-iam-auth]], [[2b-settings-db-rotated-password]]).
+- **Secure by default:** `sslmode` defaults to `verify-full` and requires `sslrootcert`; local development opts out with `DB__SSLMODE=disable`.
+- **`sslrootcert` is a CA bundle file in the image** (`FilePath`, checked at startup), not `system`: `psycopg[binary]`'s bundled OpenSSL looks for the OS store at a path that doesn't exist. For Amazon RDS use the RDS global bundle; for RDS Proxy the Amazon Root CAs. Trust roots, never intermediates.
+- **`host` is the real endpoint.** `verify-full` and IAM tokens check it; a DNS alias fails.
+- **`pool_pre_ping=True` always,** and `application_name` set for `pg_stat_activity`.
+- **On Lambda: `DB__POOL_SIZE=1`, `DB__MAX_OVERFLOW=0`** (one request at a time per instance), with RDS Proxy in front to absorb bursts of new instances.
 
-```bash
-# Local development. Deployed: no password in env vars, use a rotated secret or IAM
-DB__HOST=localhost
-DB__USER=app
-DB__NAME=orders
-DB__AUTH__METHOD=password
-DB__AUTH__PASSWORD=app
-# Local Postgres has no TLS
-DB__SSLMODE=disable
-```
-
-- **Pydantic features used:** `PostgresDsn` validates the URL; `SecretStr` masks the password; `FilePath` checks the CA bundle exists at startup; `Field` constraints validate ports and pool sizes; `Literal` rejects unsupported schemes and SSL modes; a discriminated union picks the auth model from `method`.
-- **Parts, not one URL field.** A single `url: PostgresDsn` field would print the password in reprs and logs. Storing parts keeps the password in a `SecretStr` and builds the URL only when the engine needs it.
-- **Auth as a discriminated union.** Each method is its own model with only the fields it needs, so `extra="forbid"` rejects a password set alongside IAM auth. `PasswordAuth` is defined here; the other methods have their own modules and notes, and `build_engine()` adds their connect hooks.
-- **Secure by default.** `sslmode` defaults to `verify-full`, so a deployment that forgets TLS settings fails at startup instead of connecting unverified. Local development opts out explicitly.
-- **`application_name`** identifies the app in `pg_stat_activity` and the Postgres logs.
-
-### Pool on Lambda
-Each execution environment handles one request at a time, so one connection is enough. The defaults (5 + 10) suit a long-lived server.
-
-```bash
-DB__POOL_SIZE=1
-DB__MAX_OVERFLOW=0
-```
-
-- **`pool_pre_ping`** (always on in `build_engine()`) replaces the connection when it died while the environment was frozen between requests.
-- **RDS Proxy.** A burst of new environments still opens one connection each; the proxy absorbs that ([[2b-settings-db-rds-tls]]).
-- The engine is built during init and disposed on SIGTERM; see [[1e-settings-lambda]].
-
-### Specific capabilities
-| Need | Note |
-|---|---|
-| TLS to Amazon RDS, RDS Proxy | [[2b-settings-db-rds-tls]] |
-| No password: AWS IAM database authentication | [[2b-settings-db-iam-auth]] |
-| Password rotated by Secrets Manager, picked up without a restart | [[2b-settings-db-rotated-password]] |
-
-## Pitfalls
-- **One `url` field.** `url: PostgresDsn` prints the password in reprs and logs; store parts and build the URL.
-- **`@computed_field` for the URL.** Computed fields are included in `repr()` and `model_dump()`, which leaks the password. Use a plain `@property`.
-- **Unescaped passwords.** `PostgresDsn.build()` doesn't URL-encode, so `@`, `/`, `:` or `%` in a password produce a broken URL. Always `quote(password, safe="")`.
-- **`sslmode=require` in production.** It encrypts but doesn't verify the server, so it doesn't stop a man-in-the-middle. Use `verify-full` with the server's CA bundle.
-- **Default pool sizes on Lambda.** Up to 15 connections per environment, times hundreds of environments, exhausts the database. Set 1 and 0.
-- **One flat model with every auth field optional.** It needs cross-field validators for each method and still accepts nonsense combinations. Use one model per method.
+## Anti-patterns
+- **A single `url` field.** Prints the password in reprs and logs.
+- **Unescaped passwords.** `PostgresDsn.build()` doesn't encode `@ / : %`.
+- **`sslmode=require` in production.** Encrypts but doesn't verify the server.
+- **Default pool sizes on Lambda.** 15 connections per instance times hundreds of instances exhausts the database.
+- **One flat model with every auth field optional.** Needs a validator per method and still accepts nonsense combinations.
 
 ## Related
 - [[0-settings-guide]]
 - [[1a-settings-management]]
-- [[2b-settings-db-rds-tls]]
 - [[2b-settings-db-iam-auth]]
 - [[2b-settings-db-rotated-password]]
-- [[1e-settings-lambda]]

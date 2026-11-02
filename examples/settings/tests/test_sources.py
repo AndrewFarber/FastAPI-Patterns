@@ -1,4 +1,4 @@
-"""Variants of the root Settings class shown in 3a-settings-secret-files and 3b-settings-aws-sources-pydantic."""
+"""Variants of the root Settings class shown in 3a-settings-secret-files and 3b-settings-aws-sources."""
 import json
 import os
 

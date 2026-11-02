@@ -10,6 +10,9 @@ An Obsidian vault of FastAPI design patterns, also usable as a Claude Code skill
 ## Note names
 `<section><letter>-<topic>-<name>`, e.g. `2b-settings-db`. A note for a specific capability keeps the general note's prefix and extends its name: `2b-settings-db-iam-auth`.
 
+## Note sections
+New notes start from `_templates/pattern.md`: a one-line pattern, **Fits when**, **Signals** (what in a request or in code calls for it), **Pattern**, **Rules**, **Anti-patterns**. The skill matches **Fits when** and **Signals** against the task and the codebase, so keep code signals greppable.
+
 ## Examples
 Code blocks whose first line is a full path (`# app/config/db.py`) are copies of files in `examples/<topic>/`. Edit the file, never the block, then sync:
 

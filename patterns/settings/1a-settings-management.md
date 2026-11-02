@@ -3,42 +3,39 @@ title: "Settings management"
 category: project-structure
 tags: [settings, configuration, pydantic-settings]
 status: draft
-related: ["[[0-settings-guide]]", "[[1b-settings-access]]", "[[1c-settings-testing]]", "[[1e-settings-lambda]]", "[[2a-settings-app]]", "[[2b-settings-db]]", "[[2c-settings-auth]]", "[[layout-by-layer]]"]
+related: ["[[0-settings-guide]]", "[[1b-settings-access]]", "[[1c-settings-testing]]", "[[2a-settings-app]]", "[[2b-settings-db]]", "[[2c-settings-auth]]", "[[3b-settings-aws-sources]]", "[[layout-by-layer]]"]
 ---
 
 # Settings management
 
-## Problem
-Configuration scattered across `os.getenv()` calls is untyped, unvalidated, and invisible: a missing or malformed value only surfaces when the code path that reads it runs, often in production.
+All configuration goes through one typed, frozen `Settings` object, composed from one sub-model per concern and validated at startup. A missing or malformed value fails the app before it serves traffic, not when the code path that reads it first runs.
 
-## Use when
-- Always.
+## Fits when
+- Always: any app with configuration.
 
-## Avoid when
-- Never skip it. For values that must change while the app runs, add [[4a-settings-refreshing-values]] on top.
+Not when:
+- Never skip it. Values that must change while the app runs add [[4a-settings-refreshing-values]] on top.
 
-## Solution
+## Signals
+- **Feature:** a new env var, a new external service to configure, "make X configurable".
+- **Code:** `os.getenv(` or `os.environ[` outside `config/`; a flat `Settings` with `db_host`, `db_password: str`; nested models extending `BaseSettings`; `email_enabled: bool` next to email fields; per-environment subclasses (`ProdSettings`); `password: str` instead of `SecretStr`.
 
-### The settings package
-Each concern gets its own file with one sub-model. `settings.py` composes them into the root `Settings` class.
-
+## Pattern
 ```
 config/
-├── __init__.py
 ├── settings.py     Settings: composes the sub-models, nothing else
-├── app.py          AppSettings        see [[2a-settings-app]]
-├── db.py           DbSettings         see [[2b-settings-db]]
-├── db_iam.py       IamAuth            see [[2b-settings-db-iam-auth]]
-├── db_rotated.py   RotatedSecretAuth  see [[2b-settings-db-rotated-password]]
-├── auth.py         AuthSettings       see [[2c-settings-auth]]
-├── cors.py         CorsSettings       see [[2d-settings-cors]]
-├── email.py        EmailSettings      see [[2e-settings-email]]
-├── features.py     FeatureSettings    see [[2f-settings-feature-flags]]
+├── app.py          AppSettings        [[2a-settings-app]]
+├── db.py           DbSettings         [[2b-settings-db]]
+├── db_iam.py       IamAuth            [[2b-settings-db-iam-auth]]
+├── db_rotated.py   RotatedSecretAuth  [[2b-settings-db-rotated-password]]
+├── auth.py         AuthSettings       [[2c-settings-auth]]
+├── cors.py         CorsSettings       [[2d-settings-cors]]
+├── email.py        EmailSettings      [[2e-settings-email]]
+├── features.py     FeatureSettings    [[2f-settings-feature-flags]]
 └── log.py          LogSettings, configure_logging()
 ```
 
-### A sub-model
-Every sub-model looks like `LogSettings` below: a plain `BaseModel`, frozen, rejecting unknown fields, with pydantic types doing the validation. `log.py` also holds `configure_logging()`, the one place logging is set up; `create_app()` calls it at startup ([[1b-settings-access]]).
+Every sub-model looks like `LogSettings`: a plain `BaseModel`, frozen, rejecting unknown fields, with pydantic types doing the validation. A concern's setup function (`configure_logging()`) lives next to its model.
 
 ```python
 # app/config/log.py
@@ -86,7 +83,6 @@ def configure_logging(log: LogSettings, *filters: logging.Filter) -> None:
     logging.basicConfig(level=log.level, handlers=[handler], force=True)   # force: replace earlier handlers
 ```
 
-### The root settings class
 ```python
 # app/config/settings.py
 from functools import lru_cache
@@ -141,69 +137,40 @@ def get_settings() -> Settings:
     return Settings()
 ```
 
-How the app creates and reads this object is in [[1b-settings-access]]; tests are in [[1c-settings-testing]].
-
-### Environment variables
-For local development: a shell, `docker run --env-file`, or docker-compose. Deployed environments set only non-secret values this way (see the rules below).
+Env vars map to nested fields with `__`:
 
 ```bash
-# Local development values.
-# Comments go on their own lines: env files (docker --env-file, docker-compose) keep
-# anything after "=" as the value, including a trailing "# comment".
-# JSON lists are single-quoted so the shell keeps their double quotes.
-APP__DEBUG=true
-
 DB__HOST=localhost
-DB__USER=app
 DB__AUTH__METHOD=password
-DB__AUTH__PASSWORD=app
-DB__NAME=orders
-# Local Postgres has no TLS; RDS uses verify-full (see the 2b-settings-db note)
-DB__SSLMODE=disable
-
-AUTH__ISSUER=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_AbC123xyz
-AUTH__AUDIENCES='["1example23456789"]'
-AUTH__AUDIENCE_CLAIM=client_id
-AUTH__REQUIRED_CLAIMS='{"token_use": "access"}'
-
+# JSON lists single-quoted in a shell; unquoted in env files
 CORS__ALLOW_ORIGINS='["http://localhost:3000"]'
-
-LOG__LEVEL=DEBUG
 ```
 
-In env files (no shell involved), write JSON lists without the outer single quotes: `CORS__ALLOW_ORIGINS=["http://localhost:3000"]`.
+## Rules
+- **One concern per file**, its sub-model named `<Concern>Settings`. Variants of a concern get their own files (`db.py` imports `db_iam.py`, `db_rotated.py`).
+- **Only the root is a `BaseSettings`.** Sub-models are plain `BaseModel`; only the root reads the environment.
+- **`settings.py` only composes.** App-wide values live in `app.py` like any other concern.
+- **Concerns don't import each other.** Cross-concern rules ("no debug in prod") are a `model_validator` on the root; rules within a concern go on its sub-model.
+- **`frozen=True` and `extra="forbid"` on every model.** The root's `frozen` doesn't reach sub-models; `forbid` turns a typo (`DB__POOL_SZIE`) into a startup error.
+- **Required concerns have no default; safe concerns use `Field(default_factory=...)`; optional subsystems are `X | None = None`.** Code checks `settings.email is None`, never a separate `email_enabled` flag.
+- **Defaults only for safe values** (log level, empty CORS list), never for credentials or hosts.
+- **Validate with types:** `SecretStr`, `EmailStr`, `Literal`, `Field(pattern=..., gt=...)`.
+- **No secrets in plain env vars when deployed.** Env vars carry a secret's ARN or name; the app reads the value ([[3b-settings-aws-sources]], [[2b-settings-db-rotated-password]]). On Lambda, env vars are readable via `GetFunctionConfiguration` and share 4 KB.
+- **One class for every environment.** Environments differ only by the values they set.
 
-Other ways values reach `Settings`: AWS Secrets Manager or Parameter Store, read by the app ([[3b-settings-aws-sources]]), and secret files for local docker-compose development ([[3a-settings-secret-files]]).
-
-### Rules
-- **One concern per file**, with its sub-model named `<Concern>Settings`. A concern with variants splits them into files of their own (`db.py` imports `db_iam.py` and `db_rotated.py`). Only `settings.py` defines a `BaseSettings` class.
-- **Concerns don't import each other.** Rules that span concerns (e.g. "no debug in prod") go in a `model_validator` on the root class; rules within one concern (e.g. CORS credentials) go on that sub-model.
-- **`settings.py` only composes.** No fields of its own: app-wide values live in `app.py` like any other concern.
-- **Defaults:** safe values (log level, empty CORS list) get defaults; credentials and connection details never do.
-- **Optional subsystems** use `X | None = None`. Code checks `if settings.email is None` instead of reading a separate `email_enabled` flag.
-- **Sub-model defaults** use `Field(default_factory=...)`, not a shared instance.
-- **Validate formats with pydantic types and constraints** (`EmailStr`, `Literal`, `Field(pattern=..., gt=...)`) so bad values fail at startup, not at first use.
-- **`extra="forbid"` on every settings model.** A misspelled env var (`DB__POOL_SZIE`) or a stale field fails at startup instead of being silently ignored. Payloads read at runtime are different: the AppConfig flags model ([[2f-settings-feature-flags-appconfig]]) uses `extra="ignore"`, so a flag added in AppConfig before the code doesn't break reads.
-- **No secrets in plain env vars in deployed environments.** On Lambda, env vars are readable by anyone with `lambda:GetFunctionConfiguration` and limited to 4 KB in total. Passwords and keys stay in Secrets Manager or Parameter Store, and the app reads them at startup ([[3b-settings-aws-sources-pydantic]]) or per connection ([[2b-settings-db-rotated-password]]); env vars carry only the secret's ARN or name. See [[1e-settings-lambda]].
-- Env var names are case-insensitive; nested fields use the `__` delimiter. Source priority, highest first: init kwargs → environment variables → dotenv file → secret files → defaults. The dotenv and secret-file sources read nothing until `env_file` or `secrets_dir` is set ([[3a-settings-secret-files]]); this `Settings` sets neither.
-
-## Pitfalls
-- **Reading `os.environ` directly** anywhere outside `config/`. All configuration goes through `Settings`. The exception is runtime metadata the platform sets, not configuration: `AWS_LAMBDA_FUNCTION_VERSION` in `app/observability.py` ([[1d-settings-deployments]]).
-- **Defaults for required values.** A default database host hides a missing env var until the app connects to the wrong place. No default means startup fails fast.
-- **Plain `str` for secrets.** Use `SecretStr` so values show as `**********` in logs, reprs, and tracebacks; call `.get_secret_value()` only where the raw value is needed.
-- **Unquoted JSON in shell commands.** `X=["a"]` reaches Python as `[a]`; quote it: `X='["a"]'`.
-- **Trailing comments in env files.** Docker and docker-compose env files keep `value  # comment` as the value. Put comments on their own lines.
-- **Unrelated env vars named like a field.** Every env var whose name matches a field is read: a variable called `APP`, `LOG`, or `DB__ANYTHING`, set by the platform or an extension, stops the app at startup. Keep the function's environment to the app's own variables, or add an `env_prefix` to `SettingsConfigDict`.
-- **Per-environment subclasses.** Use one class; environments differ only by the env vars they set.
-- **Mutating settings at runtime.** `frozen=True` on the root class doesn't freeze nested sub-models; each sub-model needs its own `frozen=True`. For values that legitimately change, see [[4a-settings-refreshing-values]].
-- **Nested sub-models extending `BaseSettings`.** They should be plain `BaseModel`; only the root class reads the environment.
+## Anti-patterns
+- **`os.environ` outside `config/`.** The one exception is platform metadata, not configuration (`AWS_LAMBDA_FUNCTION_VERSION`, [[1d-settings-deployments]]).
+- **Plain `str` for secrets.** Only `SecretStr` is masked in logs, reprs, and tracebacks.
+- **A default for a required value.** A default host hides a missing env var until the app connects to the wrong place.
+- **Trailing comments in env files.** Docker keeps `value  # comment` as the value.
+- **Unrelated env vars named like a field.** A platform variable called `APP` or `DB__X` fails startup; keep the environment to the app's own variables, or add an `env_prefix`.
 
 ## Related
 - [[0-settings-guide]]
 - [[1b-settings-access]]
 - [[1c-settings-testing]]
-- [[1e-settings-lambda]]
 - [[2a-settings-app]]
 - [[2b-settings-db]]
 - [[2c-settings-auth]]
+- [[3b-settings-aws-sources]]
 - [[layout-by-layer]]

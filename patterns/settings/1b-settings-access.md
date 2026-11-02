@@ -3,46 +3,33 @@ title: "Accessing settings"
 category: project-structure
 tags: [settings, dependencies, fastapi]
 status: draft
-related: ["[[1a-settings-management]]", "[[1c-settings-testing]]", "[[1e-settings-lambda]]", "[[4a-settings-refreshing-values]]"]
+related: ["[[1a-settings-management]]", "[[1c-settings-testing]]", "[[4a-settings-refreshing-values]]"]
 ---
 
 # Accessing settings
 
-## Problem
-`Settings` has to be created once, validated before the app serves traffic, reachable from routes and from code outside requests, and replaceable in tests. How it's created decides how easy each of those is.
+Build `Settings` once, at startup, and hand it out through exactly one access approach. Bad config then fails startup (on Lambda: init, so the version never takes traffic) instead of the first request.
 
-## Use when
+## Fits when
 - Wiring the `Settings` class from [[1a-settings-management]] into an app.
 
-## Avoid when
-- Never; pick one of the three approaches below and use only that one.
+Not when:
+- Never; pick one of the three approaches and use only that one.
 
-## Solution
+## Signals
+- **Feature:** a route, service, or task needs a setting; "create the app"; adding a lifespan.
+- **Code:** `Settings()` inside a route, middleware, or service; `settings = Settings()` at module level *and* `app.state.settings`; `dependency_overrides[get_settings]` in tests; a readiness route that queries the DB.
+
+## Pattern
 
 ### 1. Module singleton
 ```python
 # app/config/settings.py (fragment)
 settings = Settings()
 ```
-```python
-# anywhere
-from app.config.settings import settings
+Simplest and usable anywhere, but built at import: anything importing it needs a valid environment, and tests must set env vars before import. For scripts and tiny apps.
 
-engine = create_engine(str(settings.db.url))
-```
-- **Pros:** simplest; usable anywhere, including outside requests.
-- **Cons:** built at import time, so importing anything that imports settings needs a valid environment; tests must set env vars before import or patch the object.
-
-### 2. Cached function + `Depends` (recommended default, used by the example)
-```python
-# app/config/settings.py (fragment)
-from functools import lru_cache
-
-
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()
-```
+### 2. Cached function + `Depends` (default, used by the example)
 ```python
 # app/dependencies/settings.py
 from typing import Annotated
@@ -53,7 +40,8 @@ from app.config.settings import Settings, get_settings
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 ```
-`main.py` calls `get_settings()` once at import, so bad config fails at startup (on Lambda: during init, [[1e-settings-lambda]]) instead of on the first request. It logs the result, sets up logging, CORS, and the DB engine, and serves the readiness route through `SettingsDep`:
+
+`create_app()` calls `get_settings()` at import, so validation runs at startup. It logs the result (`SecretStr` prints as `**********`), configures logging and CORS, and the lifespan builds the DB engine once:
 
 ```python
 # app/main.py
@@ -106,10 +94,8 @@ def create_app() -> FastAPI:
 
 app = create_app()                    # module import = Lambda init phase
 ```
-- **Pros:** built once and cached; routes declare the dependency explicitly.
-- **Cons:** non-request code (lifespan, scripts, tasks) calls `get_settings()` directly.
-- **Testing:** set env vars and call `get_settings.cache_clear()` ([[1c-settings-testing]]). `dependency_overrides` alone misses code that calls `get_settings()` directly, like `create_app()` and the lifespan above.
-- Follows the layout rule: `config/` creates settings, `dependencies/` hands them to requests.
+
+Non-request code (lifespan, scripts, tasks) calls `get_settings()` directly. Tests set env vars and call `get_settings.cache_clear()` ([[1c-settings-testing]]).
 
 ### 3. Built in the app factory
 ```python
@@ -117,14 +103,9 @@ app = create_app()                    # module import = Lambda init phase
 def create_app(settings: Settings | None = None) -> FastAPI:
     if settings is None:                # not `settings or ...`: never rely on a model's truthiness
         settings = Settings()
-    logger.info("settings loaded: %s", settings.model_dump_json())
     app = FastAPI(title=settings.app.name, debug=settings.app.debug)
     app.state.settings = settings
-    app.include_router(health.router)
     return app
-
-
-app = create_app()
 ```
 ```python
 # dependencies/settings.py (fragment)
@@ -134,27 +115,26 @@ def get_settings(request: Request) -> Settings:
 
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 ```
-- **Pros:** most explicit; each app instance has its own settings, so tests just call `create_app(Settings(...))`.
-- **Cons:** requires an app factory; code outside requests needs the app (or the settings) passed in.
-
-### Choosing
+Most explicit: tests call `create_app(Settings(...))`. Code outside requests needs the settings passed in.
 
 | | Singleton | Cached function | App factory |
 |---|---|---|---|
-| Setup cost | Lowest | Low | Medium |
-| Created | At import | First call (call it at startup) | At app creation |
 | Test override | Env vars before import | Env vars + `cache_clear()` | Pass to `create_app()` |
 | Outside requests | Import it | Call `get_settings()` | Pass it in |
 | Best for | Scripts, tiny apps | Most apps | Apps already using a factory |
 
-## Pitfalls
-- **Validating on the first request.** A lazily created `Settings` lets a misconfigured version finish startup and pass the readiness check (LWA on Lambda), so the error only shows on the first request. Build it at import.
-- **Mixing approaches.** A factory that stores `app.state.settings` while `SettingsDep` calls the cached `get_settings()` gives routes the environment's settings, not the ones passed in. One approach per app.
-- **Relying on `dependency_overrides` for settings.** It only reaches request-time `Depends()`, not startup code.
-- **Logging `model_dump()` of a model with plain `str` secrets.** Only `SecretStr` is masked.
+## Rules
+- **Validate at import.** `app = create_app()` at module level builds settings before uvicorn listens.
+- **Startup objects in the lifespan.** The engine is built on startup and disposed on shutdown; nothing reads settings per request to rebuild it.
+- **`config/` creates, `dependencies/` hands out** ([[layout-by-layer]]).
+- **Keep the readiness route trivial.** `/healthz` returns the version; a DB query there would fail every new instance on a database blip.
+
+## Anti-patterns
+- **Lazy settings.** Startup and the readiness check pass, and the error shows only on the first request.
+- **Mixing approaches.** A factory storing `app.state.settings` while `SettingsDep` calls the cached `get_settings()` gives routes the environment's settings, not the ones passed in.
+- **`dependency_overrides` for settings.** It only reaches request-time `Depends()`, not `create_app()` or the lifespan.
 
 ## Related
 - [[1a-settings-management]]
 - [[1c-settings-testing]]
-- [[1e-settings-lambda]]
 - [[4a-settings-refreshing-values]]

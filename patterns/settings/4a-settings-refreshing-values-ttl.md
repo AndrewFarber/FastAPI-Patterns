@@ -3,25 +3,26 @@ title: "Rebuilding settings on a TTL"
 category: project-structure
 tags: [settings, caching]
 status: draft
-related: ["[[4a-settings-refreshing-values]]", "[[1b-settings-access]]", "[[1e-settings-lambda]]", "[[3b-settings-aws-sources-pydantic]]"]
+related: ["[[4a-settings-refreshing-values]]", "[[1b-settings-access]]", "[[3b-settings-aws-sources]]"]
 ---
 
 # Rebuilding settings on a TTL
 
-## Problem
-Configuration in AWS changes occasionally, and the app should pick it up within minutes without a redeploy, with the least possible code.
+Swap `lru_cache` on `get_settings()` for a TTL cache: the whole `Settings` is rebuilt every few minutes, with one line of code.
 
-## Use when
-- A small app reads its settings per request through `SettingsDep` (approach 2 in [[1b-settings-access]]) and can tolerate requests failing while a refresh fails.
+## Fits when
+- A small app reads settings per request through `SettingsDep` (approach 2 in [[1b-settings-access]]) and can tolerate requests failing while a rebuild fails.
 
-## Avoid when
-- The value is used by objects built at startup (the DB engine, middleware, mounted routers): they never see the new value.
-- Settings are reached through `app.state.settings` or a module singleton (approaches 1 and 3): the TTL only replaces what `get_settings()` returns.
-- Only one or two values change. Refresh them individually with [[4a-settings-refreshing-values-cache]].
+Not when:
+- The value is used by startup objects (engine, middleware, mounted routers): they never see it.
+- Settings come from `app.state` or a module singleton.
+- Only one or two values change: [[4a-settings-refreshing-values-cache]].
 
-## Solution
-Replace `lru_cache` on `get_settings()` (approach 2 in [[1b-settings-access]]) with a TTL cache:
+## Signals
+- **Feature:** "reload config every few minutes".
+- **Code:** `@lru_cache` on `get_settings()` plus a request to pick up Parameter Store changes; a custom thread that rebuilds settings.
 
+## Pattern
 ```python
 # app/config/settings.py (fragment)
 from cachetools.func import ttl_cache
@@ -32,18 +33,16 @@ def get_settings() -> Settings:
     return Settings()
 ```
 
-- Every rebuild re-reads all sources, including the AWS sources from [[3b-settings-aws-sources-pydantic]].
-- Only code that calls `get_settings()` (or `SettingsDep`) per request sees new values.
-- Tests still call `get_settings.cache_clear()`.
-- On Lambda the cache lives per execution environment and the TTL counts from that environment's init ([[1e-settings-lambda]]). An environment younger than the TTL never rebuilds.
+## Rules
+- **Only per-request readers see new values.**
+- **Every rebuild re-reads every source,** AWS ones included ([[3b-settings-aws-sources]]); keep the TTL in minutes.
+- **Tests still call `get_settings.cache_clear()`.**
 
-## Pitfalls
-- **Expecting startup objects to update.** The engine, CORS middleware, and routers mounted by flags were built once; rebuilding `Settings` doesn't touch them.
-- **Failing requests on refresh errors.** A rebuild runs inside the request that hits the expired cache, and `ttl_cache` doesn't cache exceptions. If AWS is down or a value is invalid, every request fails and retries the full rebuild, AWS calls included, until the sources recover. If that's not acceptable, refresh the values individually ([[4a-settings-refreshing-values-cache]]).
-- **Short TTLs with AWS sources.** Each rebuild makes AWS API calls, with cost and throttling limits, and every warm execution environment rebuilds on its own.
+## Anti-patterns
+- **Expecting startup objects to update.**
+- **Assuming a failed rebuild is cached.** `ttl_cache` doesn't cache exceptions: while AWS is down, every request fails and retries the whole rebuild.
 
 ## Related
 - [[4a-settings-refreshing-values]]
 - [[1b-settings-access]]
-- [[1e-settings-lambda]]
-- [[3b-settings-aws-sources-pydantic]]
+- [[3b-settings-aws-sources]]
