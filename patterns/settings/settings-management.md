@@ -39,15 +39,13 @@ config/
 ├── cors.py         CorsSettings       [[settings-cors]]
 ├── events.py       EventsSettings     [[services-events]]
 ├── features.py     FeatureSettings    [[settings-feature-flags]]
-└── log.py          LogSettings, configure_logging()
+└── log.py          LogSettings
 ```
 
-Every sub-model looks like `LogSettings`: a plain `BaseModel`, frozen, rejecting unknown fields, with pydantic types doing the validation. A concern's setup function (`configure_logging()`) lives next to its model.
+Every sub-model looks like `LogSettings`: a plain `BaseModel`, frozen, rejecting unknown fields, with pydantic types doing the validation. `config/` holds only models and their validation; code that acts on a concern lives in its own `core/` package, like `configure_logging()` in `core/observability/` ([[layout-core]]).
 
 ```python
 # app/core/config/log.py
-import logging
-import sys
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -57,12 +55,6 @@ class LogSettings(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
-
-
-def configure_logging(log: LogSettings) -> None:
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
-    logging.basicConfig(level=log.level, handlers=[handler], force=True)
 ```
 
 ```python

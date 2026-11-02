@@ -5,12 +5,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.config.log import configure_logging
 from app.core.config.settings import get_settings
 from app.core.db.engine import build_engine
 from app.core.dependencies.settings import SettingsDep
 from app.core.exceptions import handlers as error_handlers
 from app.core.messaging.sns import build_sns_sender
+from app.core.observability.log import configure_logging
 from app.core.outbox.relay import OutboxRelay
 from app.services.orders.api.router import router as orders_router
 from app.services.users.api.router import router as users_router
