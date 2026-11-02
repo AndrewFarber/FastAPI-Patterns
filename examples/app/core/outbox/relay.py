@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import Engine, Select, select
+from sqlalchemy import Engine, Select, delete, select
 from sqlalchemy.orm import Session
 
 from app.core.events.messages import encode
@@ -32,6 +32,10 @@ class OutboxRelay:
 
     def sweep(self) -> int:
         return self._send(_pending().order_by(OutboxRow.created_at).limit(self._batch_size))
+
+    def purge(self, sent_before: datetime) -> int:
+        with Session(self._engine) as session, session.begin():
+            return session.execute(delete(OutboxRow).where(OutboxRow.sent_at < sent_before)).rowcount
 
     def _send(self, query: Select[tuple[OutboxRow]]) -> int:
         sent = 0

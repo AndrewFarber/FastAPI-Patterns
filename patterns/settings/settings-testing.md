@@ -54,6 +54,7 @@ TEST_VALUES: dict[str, dict[str, Any]] = {
         "auth": {"method": "password", "password": "test"},
     },
     "events": {"topic_arn": "arn:aws:sns:us-east-1:123456789012:shop-events"},
+    "switches": {"region": "us-east-1", "orders_paused": "/shop/switches/orders-paused"},
 }
 
 
@@ -146,6 +147,7 @@ def relay(engine, sender) -> OutboxRelay:
 @pytest.fixture
 def aws() -> Iterator[str]:
     with mock_aws():
+        boto3.client("ssm").put_parameter(Name=TEST_VALUES["switches"]["orders_paused"], Value="false", Type="String")
         yield boto3.client("sns").create_topic(Name="shop-events")["TopicArn"]
 
 
@@ -193,5 +195,5 @@ def client(create_app, aws, engine, monkeypatch) -> Iterator[TestClient]:
 - **`TEST_VALUES`** is the one source of test configuration; `make_test_env()` turns it into env vars.
 - **`clean_env`** (autouse) removes every env var whose prefix is a top-level `Settings` field, plus the AWS source switches, so `APP__IS_PRD=true` in a shell can't change a test.
 - **`create_app`** imports `app.main` only after `test_env`, because importing it builds the module-level app. Tests needing other values `monkeypatch.setenv`, `get_settings.cache_clear()`, then call it.
-- **`aws`** starts `moto` and creates the SNS topic from `TEST_VALUES`; **`workers`** builds the event consumers on the test engine, and `subscribe_queue()` / `deliver()` run the SQS hop ([[services-events]]).
+- **`aws`** starts `moto` and creates the SNS topic and the `orders_paused` parameter (`"false"`) from `TEST_VALUES`, so the lifespan finds it; **`workers`** builds the event consumers on the test engine, and `subscribe_queue()` / `deliver()` run the SQS hop ([[services-events]]).
 - **Sub-models test on their own:** `FeatureSettings(new_checkout=True)`, no root `Settings` needed. Code below the entry points takes sub-models ([[settings-access]]), so its tests never touch the environment.

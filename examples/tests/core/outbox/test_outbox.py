@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select, text
@@ -66,3 +67,20 @@ def test_one_failing_event_doesnt_hold_back_the_others(engine, relay, sender, mo
     assert [json.loads(body)["payload"]["user_id"] for _, body in sender.sent] == [2]
     assert relay.sweep() == 0
     assert [row.event_id for row in outbox(engine) if row.sent_at is None] == [poison.event_id]
+
+
+def test_purge_deletes_only_rows_sent_before_the_cutoff(engine, relay, sender, monkeypatch):
+    with UnitOfWork(engine, relay) as uow:
+        uow.events.publish(UserDeactivated(user_id=1))
+
+    def unreachable(event_type, body):
+        raise ConnectionError("SNS unreachable")
+
+    monkeypatch.setattr(sender, "send", unreachable)
+    with UnitOfWork(engine, relay) as uow:
+        uow.events.publish(UserDeactivated(user_id=2))
+
+    assert relay.purge(datetime.now(UTC) - timedelta(days=1)) == 0
+    assert relay.purge(datetime.now(UTC) + timedelta(seconds=1)) == 1
+    [pending] = outbox(engine)
+    assert pending.sent_at is None

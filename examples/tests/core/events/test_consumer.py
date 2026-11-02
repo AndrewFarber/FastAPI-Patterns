@@ -1,9 +1,12 @@
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.events.consumer import EventConsumer
 from app.core.events.messages import encode, event_name, to_payload
+from app.core.events.models import ProcessedEventRow
 from app.core.outbox.models import OutboxRow
 from app.services.users import UserDeactivated
 
@@ -50,3 +53,17 @@ def test_handlers_publish_through_their_own_outbox(consumer, engine, sender):
 
 def test_unsubscribed_event_is_acknowledged(consumer):
     assert consumer.handle({"Records": [record(UserDeactivated(user_id=1))]}) == {"batchItemFailures": []}
+
+
+def test_purge_deletes_only_this_consumers_old_records(consumer, engine, relay):
+    consumer.subscribe(UserDeactivated, lambda event, uow: None)
+    other = EventConsumer("billing", engine, relay)
+    other.subscribe(UserDeactivated, lambda event, uow: None)
+    event = UserDeactivated(user_id=1)
+    consumer.handle({"Records": [record(event)]})
+    other.handle({"Records": [record(event)]})
+
+    assert consumer.purge(datetime.now(UTC) - timedelta(days=1)) == 0
+    assert consumer.purge(datetime.now(UTC) + timedelta(seconds=1)) == 1
+    with Session(engine) as session:
+        assert [row.consumer for row in session.scalars(select(ProcessedEventRow))] == ["billing"]

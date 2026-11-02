@@ -6,6 +6,7 @@ class EventsSettings(BaseModel):
 
     topic_arn: str = Field(pattern=r"^arn:aws:sns:[a-z0-9-]+:\d{12}:[\w-]+$")
     sweep_batch_size: int = Field(default=100, gt=0)
+    retention_days: int = Field(default=30, gt=0)
 
     @property
     def region(self) -> str:

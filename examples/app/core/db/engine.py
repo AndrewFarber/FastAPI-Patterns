@@ -17,7 +17,7 @@ def build_engine(db: DbSettings, application_name: str) -> Engine:
         connect_args=connect_args(db, application_name),
     )
     if isinstance(db.auth, IamAuth):
-        add_iam_token(engine, db)
+        add_iam_token(engine, db, db.auth)
     return engine
 
 

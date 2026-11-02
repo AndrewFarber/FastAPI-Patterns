@@ -1,4 +1,6 @@
-from conftest import deliver, subscribe_queue
+import boto3
+
+from conftest import TEST_VALUES, deliver, subscribe_queue
 
 
 def test_order_flow_across_services(client, workers, aws):
@@ -19,3 +21,11 @@ def test_order_flow_across_services(client, workers, aws):
 
 def test_domain_errors_map_to_http(client):
     assert client.post("/users/999/deactivate").status_code == 404
+
+
+def test_paused_ordering_is_refused(client):
+    boto3.client("ssm").put_parameter(Name=TEST_VALUES["switches"]["orders_paused"], Value="true", Overwrite=True)
+    client.app.state.parameters.invalidate(TEST_VALUES["switches"]["orders_paused"])
+    ann = client.post("/users", json={"name": "ann"}).json()
+    refused = client.post("/orders", json={"user_id": ann["id"], "item": "book"})
+    assert refused.status_code == 409 and refused.json()["error"] == "OrderingPaused"

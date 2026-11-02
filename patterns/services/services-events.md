@@ -16,7 +16,7 @@ One service announces a fact, and other services react to it later in their own 
 - **Plain values only:** frozen dataclasses with IDs and the fields subscribers need, all JSON-serializable; never entities or ORM models.
 - **The class name is the wire name,** unique across the app. Change an event by adding fields with defaults; a renamed class or a changed meaning is a new event.
 - **Stored with the change:** the outbox row is written in the publisher's transaction; a rollback drops it.
-- **Sent after commit, before the response:** the unit of work dependency uses `scope="function"`. A failed commit becomes a 5xx instead of a 2xx for a change that never happened, and nothing runs after the response, when Lambda may already have frozen the environment.
+- **Sent after commit, before the response:** the unit of work dependency uses `scope="function"`. A failed commit becomes a 5xx instead of a 2xx for a change that never happened, and nothing runs after the response, when Lambda may already have frozen the environment. The SNS client's short timeouts ([[settings-refreshing-values]]) cap what a slow SNS adds to the request.
 - **The sweeper catches what the relay missed:** a crash between commit and send, or SNS being down. Alarm on the age of the oldest pending row.
 - **Each row is locked while it's sent:** the relay and the sweeper both select pending rows `FOR UPDATE SKIP LOCKED`, so they never send the same row; a row another one holds is left for it.
 - **One bad row doesn't block the rest:** each row is sent on its own; a row that fails stays pending and the next sweep retries it, while the rows after it go out. A row that never sends shows up in the oldest-pending alarm.
@@ -25,7 +25,8 @@ One service announces a fact, and other services react to it later in their own 
 - **One queue per subscribing service,** with its own DLQ, so a failing service retries without delaying the others. Its filter policy lists `consumer.event_names`.
 - **Handlers run in their own unit of work:** a failing handler doesn't undo the publisher's work, and an event a handler publishes goes through the outbox like any other.
 - **Handlers hold no rules:** they call a use case of their own service, like `api/` does.
-- **Purge old rows:** delete sent outbox rows and processed records older than the longest retry window (DLQ retention included), on a schedule.
+- **Purge old rows:** `purge_events` deletes sent outbox rows and processed records older than `events.retention_days` (30 by default), daily. Keep it longer than the longest retry window, DLQ retention and redrive included: a purged record lets a late redelivery run again.
+- **The payload is `JSONB` on Postgres** (plain `JSON` elsewhere, for the SQLite tests), and a partial index on `created_at WHERE sent_at IS NULL` keeps the sweeper's query small however many sent rows are kept.
 - **The worker image runs the Lambda runtime:** the `python` base image needs `awslambdaric` as its entry point and the handler as its command.
 - **Tests:** the publisher's tests pass a fake `EventPublisher` and assert the recorded events; the subscriber's tests call the handler with an event and a unit of work; one test runs the whole flow against `moto`'s SNS and SQS.
 
@@ -34,6 +35,7 @@ One service announces a fact, and other services react to it later in their own 
 request ─▶ use case ─▶ events.outbox row   (same transaction as the change)
              commit ─▶ relay ─▶ SNS topic  (before the response is sent)
   sweeper (every minute) ─▶ SNS            (rows the relay missed)
+  purge (daily)          ─▶ delete sent outbox and processed rows past retention
 SNS ─▶ SQS queue per service (+ DLQ) ─▶ consumer Lambda ─▶ handler, own transaction
 ```
 
@@ -165,7 +167,7 @@ class OutboxPublisher:
         self.event_ids.append(event.event_id)
 ```
 
-The relay sends rows to SNS and marks them sent, one at a time, skipping rows another relay or sweep holds. `relay()` runs after each commit and only logs a failure; `sweep()` runs on a schedule and sends whatever is still pending:
+The relay sends rows to SNS and marks them sent, one at a time, skipping rows another relay or sweep holds. `relay()` runs after each commit and only logs a failure; `sweep()` runs on a schedule and sends whatever is still pending; `purge()` deletes rows sent before a cutoff:
 
 ```python
 # app/core/outbox/relay.py
@@ -174,7 +176,7 @@ from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import Engine, Select, select
+from sqlalchemy import Engine, Select, delete, select
 from sqlalchemy.orm import Session
 
 from app.core.events.messages import encode
@@ -203,6 +205,10 @@ class OutboxRelay:
 
     def sweep(self) -> int:
         return self._send(_pending().order_by(OutboxRow.created_at).limit(self._batch_size))
+
+    def purge(self, sent_before: datetime) -> int:
+        with Session(self._engine) as session, session.begin():
+            return session.execute(delete(OutboxRow).where(OutboxRow.sent_at < sent_before)).rowcount
 
     def _send(self, query: Select[tuple[OutboxRow]]) -> int:
         sent = 0
@@ -262,6 +268,7 @@ class EventsSettings(BaseModel):
 
     topic_arn: str = Field(pattern=r"^arn:aws:sns:[a-z0-9-]+:\d{12}:[\w-]+$")
     sweep_batch_size: int = Field(default=100, gt=0)
+    retention_days: int = Field(default=30, gt=0)
 
     @property
     def region(self) -> str:
@@ -288,16 +295,18 @@ def get_unit_of_work(request: Request) -> Iterator[UnitOfWork]:
 UnitOfWorkDep = Annotated[UnitOfWork, Depends(get_unit_of_work, scope="function")]
 ```
 
-Each subscribing service has its own consumer. It decodes the message, skips an event it already processed, and runs the handlers in one unit of work. A failure is reported as a batch item failure, so SQS retries only that message:
+Each subscribing service has its own consumer. It decodes the message, skips an event it already processed, and runs the handlers in one unit of work. A failure is reported as a batch item failure, so SQS retries only that message. `purge()` deletes this consumer's records older than a cutoff:
 
 ```python
 # app/core/events/consumer.py
 import logging
 from collections import defaultdict
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Engine
+from sqlalchemy import Engine, delete
+from sqlalchemy.orm import Session
 
 from app.core.db.unit_of_work import UnitOfWork
 from app.core.events.messages import decode, event_name, from_payload
@@ -336,6 +345,13 @@ class EventConsumer:
                 failures.append({"itemIdentifier": record["messageId"]})
         return {"batchItemFailures": failures}
 
+    def purge(self, processed_before: datetime) -> int:
+        with Session(self._engine) as session, session.begin():
+            query = delete(ProcessedEventRow).where(
+                ProcessedEventRow.consumer == self.name, ProcessedEventRow.processed_at < processed_before
+            )
+            return session.execute(query).rowcount
+
     def _handle(self, body: str) -> None:
         name, payload = decode(body)
         event_type = self._types.get(name)
@@ -346,7 +362,7 @@ class EventConsumer:
         with UnitOfWork(self._engine, self._relay) as uow:
             if uow.session.get(ProcessedEventRow, (event.event_id, self.name)) is not None:
                 return
-            uow.session.add(ProcessedEventRow(event_id=event.event_id, consumer=self.name))
+            uow.session.add(ProcessedEventRow(event_id=event.event_id, consumer=self.name, processed_at=datetime.now(UTC)))
             for handler in self._handlers[event_type]:
                 handler(event, uow)
 ```
@@ -381,6 +397,7 @@ def register(consumer: EventConsumer) -> None:
 ```python
 # app/workers.py
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.core.config.settings import get_settings
@@ -396,16 +413,19 @@ from app.services.orders import event_handlers as orders_handlers
 class Workers:
     relay: OutboxRelay
     orders: EventConsumer
+    retention: timedelta
 
 
 def create_workers() -> Workers:
     settings = get_settings()
     configure_logging(settings.log)
-    engine = build_engine(settings.db, application_name=f"{settings.app.name}-workers")
+    # A Lambda instance handles one event at a time: one connection, kept warm between invocations
+    db = settings.db.model_copy(update={"pool_size": 1, "max_overflow": 0})
+    engine = build_engine(db, application_name=f"{settings.app.name}-workers")
     relay = OutboxRelay(engine, build_sns_sender(settings.events), settings.events.sweep_batch_size)
     orders = EventConsumer("orders", engine, relay)
     orders_handlers.register(orders)
-    return Workers(relay=relay, orders=orders)
+    return Workers(relay=relay, orders=orders, retention=timedelta(days=settings.events.retention_days))
 
 
 workers = create_workers()
@@ -417,6 +437,11 @@ def handle_orders_events(event: dict[str, Any], context: Any) -> dict[str, list[
 
 def sweep_outbox(event: dict[str, Any], context: Any) -> dict[str, int]:
     return {"sent": workers.relay.sweep()}
+
+
+def purge_events(event: dict[str, Any], context: Any) -> dict[str, int]:
+    cutoff = datetime.now(UTC) - workers.retention
+    return {"outbox": workers.relay.purge(cutoff), "orders": workers.orders.purge(cutoff)}
 ```
 
 Infrastructure, one set per subscribing service:
@@ -424,6 +449,6 @@ Infrastructure, one set per subscribing service:
 - **SNS subscription** from `shop-events` to the queue, with `RawMessageDelivery` on and a `FilterPolicy` of `{"event_type": consumer.event_names}`, so the queue only receives events the service handles.
 - **Lambda** `app.workers.handle_orders_events` with the queue as event source and `ReportBatchItemFailures` on.
 
-Plus one **Lambda** `app.workers.sweep_outbox` on an EventBridge schedule (every minute).
+Plus one **Lambda** `app.workers.sweep_outbox` on an EventBridge schedule (every minute), and one `app.workers.purge_events` (daily).
 
 Users never imports orders; adding another subscriber means a new consumer, queue, and subscription, and nothing changes in users.

@@ -5,7 +5,7 @@ from pydantic import ValidationError
 from app.core.config.settings import get_settings
 
 
-def test_app_serves_healthz_with_engine_and_cors(create_app, monkeypatch):
+def test_app_serves_healthz_with_engine_and_cors(create_app, aws, monkeypatch):
     monkeypatch.setenv("CORS__ALLOW_ORIGINS", '["https://app.example.com"]')
     get_settings.cache_clear()
     app = create_app()

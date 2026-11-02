@@ -42,17 +42,14 @@ from app.core.config.db import DbSettings
 from app.core.config.db_iam import IamAuth
 
 
-def add_iam_token(engine: Engine, db: DbSettings) -> None:
-    assert isinstance(db.auth, IamAuth)
+def add_iam_token(engine: Engine, db: DbSettings, auth: IamAuth) -> None:
     if db.sslmode == "disable":
         raise ValueError("IAM database authentication requires TLS")
-    rds = boto3.client("rds", region_name=db.auth.region)
+    rds = boto3.client("rds", region_name=auth.region)
 
     @event.listens_for(engine, "do_connect")
     def provide_token(dialect, conn_rec, cargs, cparams):
-        cparams["password"] = rds.generate_db_auth_token(
-            DBHostname=db.host, Port=db.port, DBUsername=db.user, Region=db.auth.region
-        )
+        cparams["password"] = rds.generate_db_auth_token(DBHostname=db.host, Port=db.port, DBUsername=db.user, Region=auth.region)
 ```
 
-`build_engine()` ([[settings-db]]) calls `add_iam_token()` when `db.auth` is an `IamAuth`.
+`build_engine()` ([[settings-db]]) calls `add_iam_token()` when `db.auth` is an `IamAuth`, and passes it in already narrowed, so the listener reads `auth.region` without an `assert` (which `python -O` strips).

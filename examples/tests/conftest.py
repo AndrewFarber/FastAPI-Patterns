@@ -30,6 +30,7 @@ TEST_VALUES: dict[str, dict[str, Any]] = {
         "auth": {"method": "password", "password": "test"},
     },
     "events": {"topic_arn": "arn:aws:sns:us-east-1:123456789012:shop-events"},
+    "switches": {"region": "us-east-1", "orders_paused": "/shop/switches/orders-paused"},
 }
 
 
@@ -122,6 +123,7 @@ def relay(engine, sender) -> OutboxRelay:
 @pytest.fixture
 def aws() -> Iterator[str]:
     with mock_aws():
+        boto3.client("ssm").put_parameter(Name=TEST_VALUES["switches"]["orders_paused"], Value="false", Type="String")
         yield boto3.client("sns").create_topic(Name="shop-events")["TopicArn"]
 
 

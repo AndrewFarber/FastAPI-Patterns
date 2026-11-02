@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.services.orders.api.dependencies import OrderRepositoryDep, UserDirectoryDep
+from app.services.orders.api.dependencies import OrderRepositoryDep, OrderSwitchesDep, UserDirectoryDep
 from app.services.orders.api.schemas import OrderIn, OrderOut
 from app.services.orders.use_cases.place_order import PlaceOrder, place_order
 
@@ -8,8 +8,8 @@ router = APIRouter(prefix="/orders", tags=["orders"])
 
 
 @router.post("", status_code=201)
-def post_order(body: OrderIn, orders: OrderRepositoryDep, users: UserDirectoryDep) -> OrderOut:
-    order = place_order(PlaceOrder(user_id=body.user_id, item=body.item), orders, users)
+def post_order(body: OrderIn, orders: OrderRepositoryDep, users: UserDirectoryDep, switches: OrderSwitchesDep) -> OrderOut:
+    order = place_order(PlaceOrder(user_id=body.user_id, item=body.item), orders, users, switches)
     return OrderOut(id=order.id, user_id=order.user_id, item=order.item, status=order.status)
 
 

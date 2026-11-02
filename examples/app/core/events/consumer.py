@@ -1,9 +1,11 @@
 import logging
 from collections import defaultdict
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Engine
+from sqlalchemy import Engine, delete
+from sqlalchemy.orm import Session
 
 from app.core.db.unit_of_work import UnitOfWork
 from app.core.events.messages import decode, event_name, from_payload
@@ -42,6 +44,13 @@ class EventConsumer:
                 failures.append({"itemIdentifier": record["messageId"]})
         return {"batchItemFailures": failures}
 
+    def purge(self, processed_before: datetime) -> int:
+        with Session(self._engine) as session, session.begin():
+            query = delete(ProcessedEventRow).where(
+                ProcessedEventRow.consumer == self.name, ProcessedEventRow.processed_at < processed_before
+            )
+            return session.execute(query).rowcount
+
     def _handle(self, body: str) -> None:
         name, payload = decode(body)
         event_type = self._types.get(name)
@@ -52,6 +61,6 @@ class EventConsumer:
         with UnitOfWork(self._engine, self._relay) as uow:
             if uow.session.get(ProcessedEventRow, (event.event_id, self.name)) is not None:
                 return
-            uow.session.add(ProcessedEventRow(event_id=event.event_id, consumer=self.name))
+            uow.session.add(ProcessedEventRow(event_id=event.event_id, consumer=self.name, processed_at=datetime.now(UTC)))
             for handler in self._handlers[event_type]:
                 handler(event, uow)

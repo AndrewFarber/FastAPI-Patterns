@@ -1,7 +1,7 @@
 import pytest
 
 from app.services.orders.domain.entities import Order, OrderStatus
-from app.services.orders.domain.errors import UserNotActive
+from app.services.orders.domain.errors import OrderingPaused, UserNotActive
 from app.services.orders.use_cases.cancel_open_orders import CancelOpenOrders, cancel_open_orders
 from app.services.orders.use_cases.place_order import PlaceOrder, place_order
 
@@ -30,14 +30,22 @@ class FakeUserDirectory:
         return user_id in self.active
 
 
+class FakeSwitches:
+    def __init__(self, paused: bool = False) -> None:
+        self.paused = paused
+
+    def ordering_paused(self) -> bool:
+        return self.paused
+
+
 def test_place_order_for_active_user():
-    order = place_order(PlaceOrder(user_id=1, item="book"), FakeOrderRepository(), FakeUserDirectory(1))
+    order = place_order(PlaceOrder(user_id=1, item="book"), FakeOrderRepository(), FakeUserDirectory(1), FakeSwitches())
     assert order.id == 1 and order.status is OrderStatus.OPEN
 
 
 def test_place_order_asks_users_not_its_own_copy():
     with pytest.raises(UserNotActive):
-        place_order(PlaceOrder(user_id=2, item="book"), FakeOrderRepository(), FakeUserDirectory(1))
+        place_order(PlaceOrder(user_id=2, item="book"), FakeOrderRepository(), FakeUserDirectory(1), FakeSwitches())
 
 
 def test_cancel_open_orders_is_safe_to_repeat():
@@ -47,3 +55,8 @@ def test_cancel_open_orders_is_safe_to_repeat():
     for _ in range(2):
         cancel_open_orders(CancelOpenOrders(user_id=1), orders)
     assert [o.status for o in orders.orders.values()] == [OrderStatus.CANCELLED, OrderStatus.OPEN]
+
+
+def test_place_order_while_paused():
+    with pytest.raises(OrderingPaused):
+        place_order(PlaceOrder(user_id=1, item="book"), FakeOrderRepository(), FakeUserDirectory(1), FakeSwitches(paused=True))

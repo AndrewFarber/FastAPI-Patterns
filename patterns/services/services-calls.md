@@ -19,6 +19,7 @@ One service calls another in-process and waits for the answer. The caller define
 - **One direction:** if two services call each other, use events for one direction or move the boundary.
 - **Calls share the request's unit of work:** reads are fine; writes on both sides become one transaction, which is an exception to make deliberately, not by default.
 - **A check the caller acts on holds until the caller commits:** `is_active` reads the user `FOR SHARE`, so a deactivation waits for the order to commit, and its `UserDeactivated` handler then sees and cancels it. Without the lock, a deactivation committed between the check and the insert leaves an open order for a deactivated user. A share lock blocks only writers to that row, never other readers.
+- **A check the caller acts on holds until the caller commits:** `is_active` reads the user `FOR SHARE`, so a deactivation waits for the order to commit and its `UserDeactivated` handler then sees and cancels it. Without the lock, a deactivation committed between the check and the insert leaves an open order for a deactivated user. A share lock blocks only writers to that row, never other readers.
 - **Tests use a fake:** the caller's tests pass a fake `UserDirectory`; the owner tests its public interface itself.
 
 ## Code example
@@ -39,6 +40,10 @@ class OrderRepository(Protocol):
 
 class UserDirectory(Protocol):
     def is_active(self, user_id: int) -> bool: ...
+
+
+class OrderSwitches(Protocol):
+    def ordering_paused(self) -> bool: ...
 ```
 
 The owner exposes a public interface and re-exports it from `__init__.py`. The rule itself stays in its domain, and the read locks the row the answer depends on:
@@ -69,18 +74,20 @@ from app.services.users.public import UsersApi
 __all__ = ["UserDeactivated", "UsersApi"]
 ```
 
-The caller's `api/` builds the implementation from the request's unit of work and passes it to the use case:
+The caller's `api/` builds the implementations from the request's unit of work, or from app state for the runtime switches ([[settings-refreshing-values]]), and passes them to the use case:
 
 ```python
 # app/services/orders/api/dependencies.py
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Request
 
 from app.core.dependencies.db import UnitOfWorkDep
+from app.core.dependencies.settings import SettingsDep
 from app.services import users
-from app.services.orders.domain.protocols import OrderRepository, UserDirectory
+from app.services.orders.domain.protocols import OrderRepository, OrderSwitches, UserDirectory
 from app.services.orders.infrastructure.repositories import SqlOrderRepository
+from app.services.orders.infrastructure.switches import ParameterOrderSwitches
 
 
 def get_order_repository(uow: UnitOfWorkDep) -> OrderRepository:
@@ -91,8 +98,13 @@ def get_user_directory(uow: UnitOfWorkDep) -> UserDirectory:
     return users.UsersApi(uow.session)
 
 
+def get_order_switches(request: Request, settings: SettingsDep) -> OrderSwitches:
+    return ParameterOrderSwitches(request.app.state.parameters, settings.switches.orders_paused)
+
+
 OrderRepositoryDep = Annotated[OrderRepository, Depends(get_order_repository)]
 UserDirectoryDep = Annotated[UserDirectory, Depends(get_user_directory)]
+OrderSwitchesDep = Annotated[OrderSwitches, Depends(get_order_switches)]
 ```
 
 ```python
@@ -100,8 +112,8 @@ UserDirectoryDep = Annotated[UserDirectory, Depends(get_user_directory)]
 from dataclasses import dataclass
 
 from app.services.orders.domain.entities import Order
-from app.services.orders.domain.errors import UserNotActive
-from app.services.orders.domain.protocols import OrderRepository, UserDirectory
+from app.services.orders.domain.errors import OrderingPaused, UserNotActive
+from app.services.orders.domain.protocols import OrderRepository, OrderSwitches, UserDirectory
 
 
 @dataclass(frozen=True)
@@ -110,7 +122,9 @@ class PlaceOrder:
     item: str
 
 
-def place_order(command: PlaceOrder, orders: OrderRepository, users: UserDirectory) -> Order:
+def place_order(command: PlaceOrder, orders: OrderRepository, users: UserDirectory, switches: OrderSwitches) -> Order:
+    if switches.ordering_paused():
+        raise OrderingPaused()
     if not users.is_active(command.user_id):
         raise UserNotActive(command.user_id)
     return orders.add(Order(user_id=command.user_id, item=command.item))

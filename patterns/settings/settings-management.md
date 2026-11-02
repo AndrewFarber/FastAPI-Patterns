@@ -81,6 +81,7 @@ from app.core.config.db import DbSettings, PasswordAuth
 from app.core.config.events import EventsSettings
 from app.core.config.features import FeatureSettings
 from app.core.config.log import LogSettings
+from app.core.config.switches import SwitchSettings
 
 
 class Settings(BaseSettings):
@@ -92,6 +93,7 @@ class Settings(BaseSettings):
 
     db: DbSettings
     events: EventsSettings
+    switches: SwitchSettings
 
     app: AppSettings = Field(default_factory=AppSettings)
     cors: CorsSettings = Field(default_factory=CorsSettings)
@@ -140,4 +142,6 @@ DB__HOST=localhost
 DB__AUTH__METHOD=password
 # JSON lists single-quoted in a shell; unquoted in env files
 CORS__ALLOW_ORIGINS='["http://localhost:3000"]'
+SWITCHES__REGION=us-east-1
+SWITCHES__ORDERS_PAUSED=/shop/switches/orders-paused
 ```

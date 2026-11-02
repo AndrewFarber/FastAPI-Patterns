@@ -20,6 +20,8 @@ def test_aws_sources_merge_secret_and_parameters(monkeypatch):
             "/shop/prd/db/sslmode": "disable",
             "/shop/prd/db/auth/method": "password",
             "/shop/prd/events/topic_arn": "arn:aws:sns:us-east-1:123456789012:shop-events",
+            "/shop/prd/switches/region": "us-east-1",
+            "/shop/prd/switches/orders_paused": "/shop/switches/orders-paused",
         }.items():
             ssm.put_parameter(Name=name, Value=value, Type="String")
         monkeypatch.setenv("AWS_SECRETS_MANAGER_SECRET_ID", "shop/prd/app")

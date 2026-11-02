@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.core.aws.values import parameter_store_cache
 from app.core.config.settings import get_settings
 from app.core.db.engine import build_engine
 from app.core.dependencies.settings import SettingsDep
@@ -23,6 +24,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings = get_settings()
     app.state.engine = build_engine(settings.db, application_name=settings.app.name)
     app.state.relay = OutboxRelay(app.state.engine, build_sns_sender(settings.events), settings.events.sweep_batch_size)
+    app.state.parameters = parameter_store_cache(settings.switches.region, settings.switches.ttl_seconds)
+    app.state.parameters.get(settings.switches.orders_paused)  # a missing parameter fails startup, not every order
     yield
     app.state.engine.dispose()
 

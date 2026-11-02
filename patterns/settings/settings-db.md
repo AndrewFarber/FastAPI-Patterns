@@ -21,7 +21,7 @@ Store connection *parts*, not a URL, with authentication as a discriminated unio
 - **`sslrootcert` is a CA bundle file in the image** (`FilePath`, checked at startup), not `system`: `psycopg[binary]`'s bundled OpenSSL looks for the OS store at a path that doesn't exist. For Amazon RDS use the RDS global bundle. Trust roots, never intermediates.
 - **`host` is the real endpoint.** `verify-full` and IAM tokens check it; a DNS alias fails.
 - **`pool_pre_ping=True` always,** and `application_name` set for `pg_stat_activity`.
-- **Size the pool for every instance:** `pool_size + max_overflow`, times the number of app instances, must stay under the database's `max_connections`.
+- **Size the pool for every instance:** `pool_size + max_overflow`, times the number of app instances, must stay under the database's `max_connections`. Lambda workers handle one event at a time, so `workers.py` copies `DbSettings` with `pool_size=1, max_overflow=0`: one connection per instance, kept warm between invocations. Lambda workers handle one event at a time, so `workers.py` copies `DbSettings` with `pool_size=1, max_overflow=0`: one connection per instance, kept warm between invocations.
 
 ## Code example
 ```python
@@ -91,7 +91,7 @@ def build_engine(db: DbSettings, application_name: str) -> Engine:
         connect_args=connect_args(db, application_name),
     )
     if isinstance(db.auth, IamAuth):
-        add_iam_token(engine, db)
+        add_iam_token(engine, db, db.auth)
     return engine
 
 

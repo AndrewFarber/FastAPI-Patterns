@@ -17,6 +17,7 @@ from app.core.config.db import DbSettings, PasswordAuth
 from app.core.config.events import EventsSettings
 from app.core.config.features import FeatureSettings
 from app.core.config.log import LogSettings
+from app.core.config.switches import SwitchSettings
 
 
 class Settings(BaseSettings):
@@ -28,6 +29,7 @@ class Settings(BaseSettings):
 
     db: DbSettings
     events: EventsSettings
+    switches: SwitchSettings
 
     app: AppSettings = Field(default_factory=AppSettings)
     cors: CorsSettings = Field(default_factory=CorsSettings)

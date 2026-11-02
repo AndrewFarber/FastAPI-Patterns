@@ -11,3 +11,7 @@ class OrderRepository(Protocol):
 
 class UserDirectory(Protocol):
     def is_active(self, user_id: int) -> bool: ...
+
+
+class OrderSwitches(Protocol):
+    def ordering_paused(self) -> bool: ...
