@@ -1,5 +1,6 @@
 # Obsidian per-device state
-.obsidian/
+.obsidian/*
+!.obsidian/snippets/
 .trash/
 
 # Python

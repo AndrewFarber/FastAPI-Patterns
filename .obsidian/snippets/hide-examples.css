@@ -1,0 +1,3 @@
+.nav-folder:has(> .nav-folder-title[data-path="examples"]) {
+  display: none;
+}
