@@ -3,33 +3,26 @@ title: "Accessing settings"
 category: project-structure
 tags: [settings, dependencies, fastapi]
 status: draft
-related: ["[[1a-settings-management]]", "[[1c-settings-testing]]", "[[4a-settings-refreshing-values]]"]
+related: ["[[1a-settings-management]]", "[[1c-settings-testing]]", "[[2f-settings-feature-flags]]", "[[4a-settings-refreshing-values]]"]
 ---
 
 # Accessing settings
 
-Build `Settings` once, at startup, and hand it out through exactly one access approach. Bad config then fails startup instead of the first request.
+Build `Settings` once, at startup, through a cached `get_settings()`, and hand it to routes with `SettingsDep`. Only entry points read `Settings`; everything below them receives the sub-model it needs. Bad config fails startup instead of the first request.
 
 ## Fits when
 - Wiring the `Settings` class from [[1a-settings-management]] into an app.
 
 Not when:
-- Never; pick one of the three approaches and use only that one.
+- Never.
 
 ## Signals
 - **Feature:** a route, service, or task needs a setting; "create the app"; adding a lifespan.
-- **Code:** `Settings()` inside a route, middleware, or service; `settings = Settings()` at module level *and* `app.state.settings`; `dependency_overrides[get_settings]` in tests; a readiness route that queries the DB.
+- **Code:** `Settings()` inside a route, middleware, or service; `settings = Settings()` at module level; `app.state.settings`; `get_settings()` called in a use case or repository; `dependency_overrides[get_settings]` in tests; a readiness route that queries the DB.
 
 ## Pattern
+`get_settings()` is `lru_cache`d next to `Settings` ([[1a-settings-management]]); `core/dependencies/` turns it into `SettingsDep`:
 
-### 1. Module singleton
-```python
-# app/core/config/settings.py (fragment)
-settings = Settings()
-```
-Simplest and usable anywhere, but built at import: anything importing it needs a valid environment, and tests must set env vars before import. For scripts and tiny apps.
-
-### 2. Cached function + `Depends` (default, used by the example)
 ```python
 # app/core/dependencies/settings.py
 from typing import Annotated
@@ -103,46 +96,23 @@ def create_app() -> FastAPI:
 app = create_app()
 ```
 
-Non-request code (lifespan, scripts, tasks) calls `get_settings()` directly. Tests set env vars and call `get_settings.cache_clear()` ([[1c-settings-testing]]).
-
-### 3. Built in the app factory
-```python
-# main.py (fragment)
-def create_app(settings: Settings | None = None) -> FastAPI:
-    if settings is None:
-        settings = Settings()
-    app = FastAPI(title=settings.app.name, debug=settings.app.debug)
-    app.state.settings = settings
-    return app
-```
-```python
-# dependencies/settings.py (fragment)
-def get_settings(request: Request) -> Settings:
-    return request.app.state.settings
-
-
-SettingsDep = Annotated[Settings, Depends(get_settings)]
-```
-Most explicit: tests call `create_app(Settings(...))`. Code outside requests needs the settings passed in.
-
-| | Singleton | Cached function | App factory |
-|---|---|---|---|
-| Test override | Env vars before import | Env vars + `cache_clear()` | Pass to `create_app()` |
-| Outside requests | Import it | Call `get_settings()` | Pass it in |
-| Best for | Scripts, tiny apps | Most apps | Apps already using a factory |
+Entry points read settings: routes through `SettingsDep`, and `create_app()`, the lifespan, and other process entry points (workers, scripts) by calling `get_settings()`. They pass sub-models down: a use case that needs flags takes `FeatureSettings` ([[2f-settings-feature-flags]]), `build_engine()` takes `DbSettings`. Tests set env vars and call `get_settings.cache_clear()` ([[1c-settings-testing]]).
 
 ## Rules
 - **Validate at import.** `app = create_app()` at module level builds settings before uvicorn listens.
 - **Startup objects in the lifespan.** The engine is built on startup and disposed on shutdown; nothing reads settings per request to rebuild it.
 - **`core/config/` creates, `core/dependencies/` hands out** ([[1b-layout-core]]).
+- **Only entry points read `Settings`.** Routes, `create_app()`, the lifespan, and workers; use cases, repositories, and domain code get sub-models as arguments.
 - **Keep the readiness route trivial.** `/healthz` returns a constant; a DB query there would fail every new instance on a database blip.
 
 ## Anti-patterns
 - **Lazy settings.** Startup and the readiness check pass, and the error shows only on the first request.
-- **Mixing approaches.** A factory storing `app.state.settings` while `SettingsDep` calls the cached `get_settings()` gives routes the environment's settings, not the ones passed in.
+- **A second access path.** A module-level `settings = Settings()` or `app.state.settings` next to `get_settings()` gives tests and code two copies that can disagree.
+- **`get_settings()` deep in the code.** A use case that reads global settings hides what it depends on, and its tests need the environment instead of a sub-model.
 - **`dependency_overrides` for settings.** It only reaches request-time `Depends()`, not `create_app()` or the lifespan.
 
 ## Related
 - [[1a-settings-management]]
 - [[1c-settings-testing]]
+- [[2f-settings-feature-flags]]
 - [[4a-settings-refreshing-values]]

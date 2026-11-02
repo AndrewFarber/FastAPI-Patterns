@@ -1,9 +1,4 @@
-import json
-
-import boto3
-import psycopg
 import pytest
-from moto import mock_aws
 from pydantic import ValidationError
 
 from app.core.config.db import DbSettings, PasswordAuth
@@ -62,31 +57,4 @@ def test_iam_token_per_connection(ca_bundle):
 def test_iam_requires_tls():
     with pytest.raises(ValueError, match="requires TLS"):
         build_engine(DbSettings(**LOCAL, auth={"method": "iam", "region": "us-east-1"}), "shop-api")
-
-
-def test_rotated_password_retries_after_rotation(monkeypatch):
-    with mock_aws():
-        sm = boto3.client("secretsmanager")
-        sm.create_secret(Name="shop/prd/db-app", SecretString=json.dumps({"username": "shop_app", "password": "old"}))
-        db = DbSettings(**LOCAL, auth={"method": "rotated_secret", "secret_id": "shop/prd/db-app", "region": "us-east-1"})
-        engine = build_engine(db, "shop-api")
-        [listener] = list(engine.dialect.dispatch.do_connect)
-
-        attempts = []
-
-        def fake_connect(*cargs, **cparams):
-            attempts.append((cparams["user"], cparams["password"]))
-            if cparams["password"] != "new":
-                raise psycopg.OperationalError("password authentication failed")
-            return "connection"
-
-        monkeypatch.setattr(engine.dialect, "connect", fake_connect)
-        with pytest.raises(psycopg.OperationalError):
-            listener(engine.dialect, None, [], {})
-        assert attempts == [("shop_app", "old")]
-        sm.put_secret_value(SecretId="shop/prd/db-app",
-                            SecretString=json.dumps({"username": "shop_app_clone", "password": "new"}))
-        attempts.clear()
-        assert listener(engine.dialect, None, [], {}) == "connection"
-        assert attempts == [("shop_app", "old"), ("shop_app_clone", "new")]
 

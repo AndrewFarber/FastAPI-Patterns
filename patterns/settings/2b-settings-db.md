@@ -3,12 +3,12 @@ title: "DB settings"
 category: persistence
 tags: [settings, database, postgres, sqlalchemy]
 status: draft
-related: ["[[0-settings-guide]]", "[[1a-settings-management]]", "[[2b-settings-db-iam-auth]]", "[[2b-settings-db-rotated-password]]"]
+related: ["[[0-settings-guide]]", "[[1a-settings-management]]", "[[2b-settings-db-iam-auth]]"]
 ---
 
 # DB settings
 
-Store connection *parts*, not a URL, with authentication as a discriminated union of one model per method, and verified TLS by default. The password stays in a `SecretStr`, the URL is built only for the engine, and each auth method accepts only its own fields.
+Store connection *parts*, not a URL, with authentication as a discriminated union of one model per method, and verified TLS by default. Deployed environments use IAM ([[2b-settings-db-iam-auth]]); a static password, kept in a `SecretStr`, is for local development and tests only.
 
 ## Fits when
 - The app connects to PostgreSQL through SQLAlchemy and uses [[1a-settings-management]].
@@ -18,7 +18,7 @@ Not when:
 
 ## Signals
 - **Feature:** connecting to a database, adding a DB auth method, TLS to the database, pool tuning.
-- **Code:** `DATABASE_URL` or `url: PostgresDsn` as a field; `create_engine(os.getenv(...))`; `@computed_field` URL; `sslmode=require`; one model with `password`, `iam_region`, `secret_id` all optional; the engine created per request.
+- **Code:** `DATABASE_URL` or `url: PostgresDsn` as a field; `create_engine(os.getenv(...))`; `@computed_field` URL; `sslmode=require`; one model with `password` and `iam_region` both optional; a DB password in a deployed environment; the engine created per request.
 
 ## Pattern
 ```python
@@ -29,7 +29,6 @@ from urllib.parse import quote
 from pydantic import BaseModel, ConfigDict, Field, FilePath, PostgresDsn, SecretStr, model_validator
 
 from app.core.config.db_iam import IamAuth
-from app.core.config.db_rotated import RotatedSecretAuth
 
 
 class PasswordAuth(BaseModel):
@@ -39,7 +38,7 @@ class PasswordAuth(BaseModel):
     password: SecretStr
 
 
-DbAuth = Annotated[PasswordAuth | IamAuth | RotatedSecretAuth, Field(discriminator="method")]
+DbAuth = Annotated[PasswordAuth | IamAuth, Field(discriminator="method")]
 
 
 class DbSettings(BaseModel):
@@ -97,9 +96,7 @@ from sqlalchemy import Engine, create_engine
 
 from app.core.config.db import DbSettings
 from app.core.config.db_iam import IamAuth
-from app.core.config.db_rotated import RotatedSecretAuth
 from app.core.db.iam_auth import add_iam_token
-from app.core.db.rotated_password import add_rotated_password
 
 
 def build_engine(db: DbSettings, application_name: str) -> Engine:
@@ -115,8 +112,6 @@ def build_engine(db: DbSettings, application_name: str) -> Engine:
     )
     if isinstance(db.auth, IamAuth):
         add_iam_token(engine, db)
-    elif isinstance(db.auth, RotatedSecretAuth):
-        add_rotated_password(engine, db)
     return engine
 ```
 
@@ -124,7 +119,8 @@ The engine is built once in the lifespan and disposed on shutdown ([[1b-settings
 
 ## Rules
 - **Parts, not a URL.** `url` is a plain `@property` that `quote()`s the password; a computed field would appear in `repr()` and `model_dump()`.
-- **One auth model per method,** selected by `method`. `extra="forbid"` then rejects a password set alongside IAM. Methods without a static password add a connect hook in `build_engine()` ([[2b-settings-db-iam-auth]], [[2b-settings-db-rotated-password]]).
+- **One auth model per method,** selected by `method`. `extra="forbid"` then rejects a password set alongside IAM.
+- **`password` locally, `iam` when deployed.** The root validator rejects `PasswordAuth` when `app.is_prd` ([[1a-settings-management]]); IAM adds its token hook in `build_engine()` ([[2b-settings-db-iam-auth]]).
 - **Secure by default:** `sslmode` defaults to `verify-full` and requires `sslrootcert`; local development opts out with `DB__SSLMODE=disable`.
 - **`sslrootcert` is a CA bundle file in the image** (`FilePath`, checked at startup), not `system`: `psycopg[binary]`'s bundled OpenSSL looks for the OS store at a path that doesn't exist. For Amazon RDS use the RDS global bundle. Trust roots, never intermediates.
 - **`host` is the real endpoint.** `verify-full` and IAM tokens check it; a DNS alias fails.
@@ -142,4 +138,3 @@ The engine is built once in the lifespan and disposed on shutdown ([[1b-settings
 - [[0-settings-guide]]
 - [[1a-settings-management]]
 - [[2b-settings-db-iam-auth]]
-- [[2b-settings-db-rotated-password]]

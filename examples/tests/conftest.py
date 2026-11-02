@@ -24,10 +24,6 @@ TEST_VALUES: dict[str, dict[str, Any]] = {
 }
 
 
-def make_test_settings() -> Settings:
-    return Settings(**TEST_VALUES)
-
-
 def make_test_env() -> dict[str, str]:
     return {
         f"{section}__{key}".upper(): json.dumps(value) if isinstance(value, (list, dict)) else str(value)

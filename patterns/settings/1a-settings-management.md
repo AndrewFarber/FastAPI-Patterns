@@ -27,7 +27,6 @@ config/
 ├── app.py          AppSettings        [[2a-settings-app]]
 ├── db.py           DbSettings         [[2b-settings-db]]
 ├── db_iam.py       IamAuth            [[2b-settings-db-iam-auth]]
-├── db_rotated.py   RotatedSecretAuth  [[2b-settings-db-rotated-password]]
 ├── auth.py         AuthSettings       [[2c-settings-auth-cognito]]
 ├── cors.py         CorsSettings       [[2d-settings-cors]]
 ├── features.py     FeatureSettings    [[2f-settings-feature-flags]]
@@ -68,7 +67,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.core.config.app import AppSettings
 from app.core.config.auth import AuthSettings
 from app.core.config.cors import CorsSettings
-from app.core.config.db import DbSettings
+from app.core.config.db import DbSettings, PasswordAuth
 from app.core.config.features import FeatureSettings
 from app.core.config.log import LogSettings
 
@@ -95,6 +94,8 @@ class Settings(BaseSettings):
                 raise ValueError("debug must be off in prod")
             if "*" in self.cors.allow_origins:
                 raise ValueError("wildcard CORS origin is not allowed in prod")
+            if isinstance(self.db.auth, PasswordAuth):
+                raise ValueError("password DB auth is for local use; prod uses iam")
         return self
 
 
@@ -113,15 +114,15 @@ CORS__ALLOW_ORIGINS='["http://localhost:3000"]'
 ```
 
 ## Rules
-- **One concern per file**, its sub-model named `<Concern>Settings`. Variants of a concern get their own files (`db.py` imports `db_iam.py`, `db_rotated.py`).
+- **One concern per file**, its sub-model named `<Concern>Settings`. Variants of a concern get their own files (`db.py` imports `db_iam.py`).
 - **Only the root is a `BaseSettings`.** Sub-models are plain `BaseModel`; only the root reads the environment.
 - **`settings.py` only composes.** App-wide values live in `app.py` like any other concern.
-- **Concerns don't import each other.** Cross-concern rules ("no debug in prod") are a `model_validator` on the root; rules within a concern go on its sub-model.
+- **Concerns don't import each other.** Cross-concern rules ("no debug in prod", "no password DB auth in prod") are a `model_validator` on the root; rules within a concern go on its sub-model.
 - **`frozen=True` and `extra="forbid"` on every model.** The root's `frozen` doesn't reach sub-models; `forbid` turns a typo (`DB__POOL_SZIE`) into a startup error.
 - **Required concerns have no default; safe concerns use `Field(default_factory=...)`; optional subsystems are `X | None = None`.** Code checks `settings.smtp is None`, never a separate `smtp_enabled` flag.
 - **Defaults only for safe values** (log level, empty CORS list), never for credentials or hosts.
 - **Validate with types:** `SecretStr`, `Literal`, `Field(pattern=..., gt=...)`.
-- **No secrets in plain env vars when deployed.** Env vars carry a secret's ARN or name; the app reads the value ([[3b-settings-aws-sources]], [[2b-settings-db-rotated-password]]). Env vars are readable by anyone who can read the deployment configuration.
+- **No secrets in plain env vars when deployed.** Env vars carry a secret's ARN or name and the app reads the value ([[3b-settings-aws-sources]]); the database uses IAM and has no password ([[2b-settings-db-iam-auth]]). Env vars are readable by anyone who can read the deployment configuration.
 - **One class for every environment.** Environments differ only by the values they set.
 
 ## Anti-patterns

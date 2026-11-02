@@ -33,7 +33,7 @@ Present the matches as a short list, feature fits first:
 
 Then ask which to implement with AskUserQuestion (`multiSelect: true`, at most four options, recommended first). Don't edit code before the user answers. If the user already said "just do it", implement the feature fits and list the codebase fits as suggestions.
 
-When a chosen note offers options (e.g. three ways to access settings), settle them in the same round: answer what the codebase already decides, ask only the rest, and use the note's recommended option when the user doesn't care.
+Each note prescribes one way to do its job. When the codebase already does it another way, say so and ask whether to migrate rather than adding a second way.
 
 ## 5. Implement
 - Follow the note's **Pattern** code and **Rules**, and avoid its **Anti-patterns**. A code block whose first line is a full path (`# app/core/config/db.py`) is a tested file under `examples/`; read the full file there when the block isn't enough. Blocks marked `(fragment)` show part of a file.

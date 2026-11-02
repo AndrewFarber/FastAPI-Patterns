@@ -4,7 +4,6 @@ from urllib.parse import quote
 from pydantic import BaseModel, ConfigDict, Field, FilePath, PostgresDsn, SecretStr, model_validator
 
 from app.core.config.db_iam import IamAuth
-from app.core.config.db_rotated import RotatedSecretAuth
 
 
 class PasswordAuth(BaseModel):
@@ -14,7 +13,7 @@ class PasswordAuth(BaseModel):
     password: SecretStr
 
 
-DbAuth = Annotated[PasswordAuth | IamAuth | RotatedSecretAuth, Field(discriminator="method")]
+DbAuth = Annotated[PasswordAuth | IamAuth, Field(discriminator="method")]
 
 
 class DbSettings(BaseModel):

@@ -37,6 +37,8 @@ def test_stale_field_rejected():
 def test_prod_safety():
     with pytest.raises(ValidationError, match="debug"):
         Settings(**TEST_VALUES, app={"is_prd": True, "debug": True})
+    with pytest.raises(ValidationError, match="password DB auth"):
+        Settings(**TEST_VALUES, app={"is_prd": True})
 
 
 def test_dump_masks_secrets():

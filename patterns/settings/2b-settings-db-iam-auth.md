@@ -3,7 +3,7 @@ title: "IAM database authentication"
 category: persistence
 tags: [settings, database, aws-rds, aws-iam]
 status: draft
-related: ["[[2b-settings-db]]", "[[2b-settings-db-rotated-password]]"]
+related: ["[[2b-settings-db]]"]
 ---
 
 # IAM database authentication
@@ -11,11 +11,10 @@ related: ["[[2b-settings-db]]", "[[2b-settings-db-rotated-password]]"]
 Settings hold only *how* to authenticate (`method: iam`, region); a SQLAlchemy `do_connect` hook signs a fresh 15-minute token per new connection. The app has no DB password to store or rotate.
 
 ## Fits when
-- The app connects to Amazon RDS or Aurora PostgreSQL and runs with an AWS role.
+- Always, when deployed: the app connects to Amazon RDS or Aurora PostgreSQL and runs with an AWS role. Local runs and tests use `PasswordAuth` ([[2b-settings-db]]).
 
 Not when:
-- More than about 200 new connections per second: RDS throttles IAM authentication; use [[2b-settings-db-rotated-password]].
-- The database isn't on AWS, or other tools connecting to it can't generate tokens: [[2b-settings-db-rotated-password]].
+- The database isn't on AWS: this vault doesn't cover it.
 
 ## Signals
 - **Feature:** "no DB password", "IAM auth", "connect with the app's role".
@@ -61,6 +60,7 @@ def add_iam_token(engine: Engine, db: DbSettings) -> None:
 `build_engine()` ([[2b-settings-db]]) calls `add_iam_token()` when `db.auth` is an `IamAuth`.
 
 ## Rules
+- **Keep new connections under about 200 per second:** RDS throttles IAM authentication. Size the pool so connections are reused ([[2b-settings-db]]); put RDS Proxy in front if instances churn.
 - **Token per connection, in `do_connect`.** It only authenticates; open sessions outlive it.
 - **The auth model holds no secret,** only the method and region; the hook lives in `core/db/`, the model in `core/config/`.
 - **TLS required:** the hook refuses `sslmode=disable`.
@@ -73,4 +73,3 @@ def add_iam_token(engine: Engine, db: DbSettings) -> None:
 
 ## Related
 - [[2b-settings-db]]
-- [[2b-settings-db-rotated-password]]

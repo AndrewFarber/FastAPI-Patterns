@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.core.config.app import AppSettings
 from app.core.config.auth import AuthSettings
 from app.core.config.cors import CorsSettings
-from app.core.config.db import DbSettings
+from app.core.config.db import DbSettings, PasswordAuth
 from app.core.config.features import FeatureSettings
 from app.core.config.log import LogSettings
 
@@ -34,6 +34,8 @@ class Settings(BaseSettings):
                 raise ValueError("debug must be off in prod")
             if "*" in self.cors.allow_origins:
                 raise ValueError("wildcard CORS origin is not allowed in prod")
+            if isinstance(self.db.auth, PasswordAuth):
+                raise ValueError("password DB auth is for local use; prod uses iam")
         return self
 
 

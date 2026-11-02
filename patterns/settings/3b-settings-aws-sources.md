@@ -73,28 +73,29 @@ AWS_DEFAULTS_MODE=in-region
 |---|---|---|
 | Holds | Secrets | Plain configuration |
 | Shape | One secret, a JSON object | One parameter per field under a path |
-| Nested field | Key `db--auth--password` | `/shop/prd/db/host` |
+| Nested field | Key `<concern>--<field>` | `/shop/prd/db/host` |
 
 ## Where each value comes from
 | Value | Source |
 |---|---|
 | Non-secret, few | Env var, set at deploy |
 | Secret, or many values | These sources, at startup |
-| Rotated DB password | Per connection: [[2b-settings-db-rotated-password]] |
-| Changes while running | [[4a-settings-refreshing-values]] |
+| Changes while running | A cache client: [[4a-settings-refreshing-values]] |
+| DB credentials | None: IAM ([[2b-settings-db-iam-auth]]) |
 
 ## Rules
 - **Opt-in by env var,** so the fixtures in [[1c-settings-testing]] work unchanged; test the wiring with `moto`.
 - **Env vars first,** so a deploy can override one value.
-- **One source per field.** A sub-model may span both (`db/auth/method` in Parameter Store, `db--auth--password` in Secrets Manager).
+- **One source per field.** A sub-model may span both: its plain fields under the path, its secret fields in the secret.
 - **Names match field names, case-sensitively.** `extra="forbid"` catches wrong names inside a sub-model; a wrong first segment (`/shop/prd/Db/host`) is silently ignored.
 - **Lists are JSON strings.**
 - **Few calls per startup:** one secret, one small path (a `GetParametersByPath` call per 10 parameters). Every new instance repeats them, and Parameter Store allows 40 TPS per account by default.
+- **Timeouts through `AWS_DEFAULTS_MODE`.** The sources build their own boto3 clients and accept no `Config`, so the env var is the only way to shorten their timeouts. Clients the app builds itself pass an explicit `Config` ([[4a-settings-refreshing-values]]).
 - **Least privilege:** `GetSecretValue` on the app's secret ARN (`-??????` suffix, not `-*`), `GetParametersByPath` on its path.
 
 ## Anti-patterns
 - **Secrets in env vars,** including `{{resolve:secretsmanager:...}}`: plain text in the deployment configuration.
-- **Rebuilding settings often with these sources.** Each rebuild is AWS calls ([[4a-settings-refreshing-values-ttl]]).
+- **Rebuilding settings to pick up changes.** Each rebuild repeats every AWS call, and startup objects keep the old values; read live values through a cache client ([[4a-settings-refreshing-values]]).
 - **An `env_prefix` added later.** The sources inherit it; pass `env_prefix=""` to them.
 - **No route to AWS from a VPC.** Every startup fails on the connect timeout; add a NAT gateway or interface endpoints.
 

@@ -46,10 +46,6 @@ TEST_VALUES: dict[str, dict[str, Any]] = {
 }
 
 
-def make_test_settings() -> Settings:
-    return Settings(**TEST_VALUES)
-
-
 def make_test_env() -> dict[str, str]:
     return {
         f"{section}__{key}".upper(): json.dumps(value) if isinstance(value, (list, dict)) else str(value)
@@ -121,16 +117,15 @@ def client(create_app, engine, monkeypatch) -> Iterator[TestClient]:
         yield client
 ```
 
-- **`TEST_VALUES`** is the one source of test configuration; `make_test_settings()` builds a `Settings` from it, `make_test_env()` turns it into env vars.
+- **`TEST_VALUES`** is the one source of test configuration; `make_test_env()` turns it into env vars.
 - **`clean_env`** (autouse) removes every env var whose prefix is a top-level `Settings` field, plus the AWS source switches, so `APP__IS_PRD=true` in a shell can't change a test.
 - **`create_app`** imports `app.main` only after `test_env`, because importing it builds the module-level app. Tests needing other values `monkeypatch.setenv`, `get_settings.cache_clear()`, then call it.
-- **Sub-models test on their own:** `FeatureSettings(new_checkout=True)`, no root `Settings` needed.
+- **Sub-models test on their own:** `FeatureSettings(new_checkout=True)`, no root `Settings` needed. Code below the entry points takes sub-models ([[1b-settings-access]]), so its tests never touch the environment.
 
 ## Rules
 - **Set the environment, not overrides,** so startup code that calls `get_settings()` directly sees test values.
 - **`cache_clear()` before and after** each test that changes the environment.
 - **Pass every value a test depends on;** fields not passed fall back to the (cleaned) environment.
-- **Per access approach:** approach 3 needs none of this (`create_app(make_test_settings())`); approach 1 sets env vars before `app.core.config.settings` is first imported.
 - **AWS stays offline:** `aws_credentials` (autouse) drops the developer's `AWS_PROFILE` and sets fake keys in every test; AWS wiring is tested with `moto` ([[3b-settings-aws-sources]]).
 
 ## Anti-patterns
