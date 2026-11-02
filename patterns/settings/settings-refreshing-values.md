@@ -8,11 +8,11 @@ related:
 # Refreshing settings values
 
 ## Overview
-`Settings` stays frozen and is built once. A redeploy is the default way to change a value; a value that can't wait for one is read through a `TtlCache` (`core/cache/`) around an AWS client (`core/aws/`), and settings hold only *where* and *how often* to fetch it. One fetch per expired key, the old value while it refreshes, and the last good value with a backoff when the source is down.
+`Settings` stays frozen and is built once. A redeploy is the default way to change a value; a value that can't wait for one is read through a `TtlCache` (`core/cache/`) around an AWS client (`core/aws/`), and settings hold only *where* and *how often* to fetch it. An expired key is fetched on the next read, and the last good value is served with a backoff when the source is down.
 
 ## Rules
 - **Never mutate or rebuild settings.** Startup objects (engine, middleware, mounted routers) would keep the old values, and a failed rebuild would fail every request; the cache is a client built at startup.
-- **Stampede protection:** a per-key lock; other threads get the old value at once and wait only when there is none.
+- **No locks.** Sync routes share the cache across threadpool threads; each dict read and write is atomic, so threads never see a torn entry. At expiry, threads that read the key at the same moment each fetch it: a few extra calls once per TTL, each capped by the client timeouts.
 - **Last good value on errors,** with one warning and a `retry_seconds` backoff; raise only when there has never been a value.
 - **`invalidate()` keeps the fallback** and forces the next read to fetch, for a caller that knows the value is stale.
 - **Short boto3 timeouts on the request path** (1 s connect, 2 s read, 2 attempts).
@@ -24,7 +24,6 @@ related:
 ```python
 # app/core/cache/ttl_cache.py
 import logging
-import threading
 import time
 from collections.abc import Callable
 
@@ -37,43 +36,25 @@ class TtlCache:
         self._ttl = ttl_seconds
         self._retry = min(retry_seconds, ttl_seconds)
         self._values: dict[str, tuple[float, str]] = {}
-        self._locks: dict[str, threading.Lock] = {}
-        self._locks_guard = threading.Lock()
 
     def get(self, key: str) -> str:
         cached = self._values.get(key)
         if cached and cached[0] > time.monotonic():
             return cached[1]
-        lock = self._lock_for(key)
-        if cached is None:
-            lock.acquire()
-        elif not lock.acquire(blocking=False):
-            return cached[1]
         try:
-            cached = self._values.get(key)
-            if cached and cached[0] > time.monotonic():
-                return cached[1]
-            try:
-                value = self._fetch(key)
-            except Exception:
-                if cached is None:
-                    raise
-                self._values[key] = (time.monotonic() + self._retry, cached[1])
-                logger.warning("refresh of %s failed; serving the last good value", key, exc_info=True)
-                return cached[1]
-            self._values[key] = (time.monotonic() + self._ttl, value)
-            return value
-        finally:
-            lock.release()
+            value, ttl = self._fetch(key), self._ttl
+        except Exception:
+            if cached is None:
+                raise
+            logger.warning("refresh of %s failed; serving the last good value", key, exc_info=True)
+            value, ttl = cached[1], self._retry
+        self._values[key] = (time.monotonic() + ttl, value)
+        return value
 
     def invalidate(self, key: str) -> None:
         cached = self._values.get(key)
         if cached:
             self._values[key] = (0.0, cached[1])
-
-    def _lock_for(self, key: str) -> threading.Lock:
-        with self._locks_guard:
-            return self._locks.setdefault(key, threading.Lock())
 ```
 
 ```python

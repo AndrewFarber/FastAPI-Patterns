@@ -19,4 +19,4 @@ related:
 | [[settings-cors]] | Exact origins validated at startup, set in the app only. |
 | [[settings-feature-flags]] | Static typed flags, default off, passed into services. |
 | [[settings-aws-sources]] | Secrets Manager and Parameter Store as pydantic-settings sources, added only when configured. |
-| [[settings-refreshing-values]] | Settings stay frozen; individual live values come from a stampede-safe TTL cache. |
+| [[settings-refreshing-values]] | Settings stay frozen; individual live values come from a TTL cache that serves the last good value. |
