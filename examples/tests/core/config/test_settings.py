@@ -28,11 +28,30 @@ def test_stale_field_is_rejected():
         Settings(**TEST_VALUES, redis={"url": "x"})
 
 
+PRD_VALUES = {**TEST_VALUES, "app": {"is_prd": True}}
+
+
 def test_prod_rejects_debug_and_password_auth():
     with pytest.raises(ValidationError, match="debug"):
-        Settings(**TEST_VALUES, app={"is_prd": True, "debug": True})
+        Settings(**{**PRD_VALUES, "app": {"is_prd": True, "debug": True}})
     with pytest.raises(ValidationError, match="password DB auth"):
-        Settings(**TEST_VALUES, app={"is_prd": True})
+        Settings(**PRD_VALUES)
+
+
+def test_prod_rejects_unverified_tls(ca_bundle):
+    db = {
+        **TEST_VALUES["db"],
+        "auth": {"method": "iam", "region": "us-east-1"},
+        "sslrootcert": ca_bundle,
+    }
+    with pytest.raises(ValidationError, match="verify-full"):
+        Settings(**{**PRD_VALUES, "db": {**db, "sslmode": "require"}})
+    assert Settings(**{**PRD_VALUES, "db": {**db, "sslmode": "verify-full"}})
+
+
+def test_missing_is_prd_fails_startup():
+    with pytest.raises(ValidationError, match="is_prd"):
+        Settings(**{**TEST_VALUES, "app": {}})
 
 
 def test_dump_masks_secrets():
@@ -73,6 +92,7 @@ def test_aws_sources_merge_secret_and_parameters(monkeypatch):
         )
         ssm = boto3.client("ssm")
         for name, value in {
+            "/shop/prd/app/is_prd": "false",
             "/shop/prd/db/host": "rds",
             "/shop/prd/db/user": "shop_app",
             "/shop/prd/db/name": "shop",

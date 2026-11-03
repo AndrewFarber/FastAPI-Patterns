@@ -20,14 +20,15 @@ One service announces a fact, and other services react to it later in their own 
 - **Sent after commit, before the response:** the unit of work dependency uses `scope="function"`. A failed commit becomes a 5xx instead of a 2xx for a change that never happened, and nothing runs after the response, when Lambda may already have frozen the environment. The SNS client's short timeouts ([[settings-refreshing-values]]) cap what a slow SNS adds to the request.
 - **The sweeper catches what the relay missed:** a crash between commit and send, or SNS being down. Alarm on the age of the oldest pending row.
 - **Each row is locked while it's sent:** the relay and the sweeper both select pending rows `FOR UPDATE SKIP LOCKED`, so they never send the same row; a row another one holds is left for it.
-- **One bad row doesn't block the rest:** each row is sent on its own; a row that fails stays pending and the next sweep retries it, while the rows after it go out. A row that never sends shows up in the oldest-pending alarm.
+- **Ten rows per transaction:** both commit every `CHUNK_SIZE` rows, so a slow SNS holds few locks and a Lambda timeout rolls back, and later resends, only the rows in flight.
+- **Bad rows don't block the rest:** each row is sent on its own; a failed send adds one to its `attempts` and leaves it pending. The sweeper picks rows by `attempts`, then `created_at`, so rows that keep failing sink behind fresh ones however many there are, and are still retried when there's room. A row that never sends shows up in the oldest-pending alarm; alarm on high `attempts` too.
 - **At least once:** a crash or failed commit after a send, and SNS and SQS themselves, can deliver twice. The consumer records `(event_id, consumer)` in `events.processed_events` in the handler's transaction and skips repeats.
 - **No ordering:** standard topics and queues reorder messages; a handler that needs order checks the state it changes, not the order of events.
 - **One queue per subscribing service,** with its own DLQ, so a failing service retries without delaying the others. Its filter policy lists `consumer.event_names`.
 - **Handlers run in their own unit of work:** a failing handler doesn't undo the publisher's work, and an event a handler publishes goes through the outbox like any other.
 - **Handlers hold no rules:** they call a use case of their own service, like `api/` does.
 - **Purge old rows:** `purge_events` deletes sent outbox rows and processed records older than `events.retention_days` (30 by default), daily. Keep it longer than the longest retry window, DLQ retention and redrive included: a purged record lets a late redelivery run again.
-- **The payload is `JSONB` on Postgres** (plain `JSON` elsewhere, for the SQLite tests), and a partial index on `created_at WHERE sent_at IS NULL` keeps the sweeper's query small however many sent rows are kept.
+- **The payload is `JSONB` on Postgres** (plain `JSON` elsewhere, for the SQLite tests), and a partial index on `(attempts, created_at) WHERE sent_at IS NULL` keeps the sweeper's query small however many sent rows are kept.
 - **The worker image runs the Lambda runtime:** the `python` base image needs `awslambdaric` as its entry point and the handler as its command.
 - **Tests:** the publisher's tests pass a fake `EventPublisher` and assert the recorded events; the subscriber's tests call the handler with an event and a unit of work; one test runs the whole flow against `moto`'s SNS and SQS.
 
@@ -194,6 +195,10 @@ from app.core.outbox.models import DbOutboxEvent
 
 logger = logging.getLogger(__name__)
 
+# Rows sent per transaction: a timeout rolls back only the rows in flight,
+# and a slow send holds few locks
+CHUNK_SIZE = 10
+
 
 class MessageSender(Protocol):
     def send(self, event_type: str, body: str) -> None: ...
@@ -214,7 +219,9 @@ class OutboxRelay:
         if not event_ids:
             return
         try:
-            self._send(_pending().where(DbOutboxEvent.event_id.in_(event_ids)))
+            for start in range(0, len(event_ids), CHUNK_SIZE):
+                chunk = event_ids[start : start + CHUNK_SIZE]
+                self._send(_pending().where(DbOutboxEvent.event_id.in_(chunk)))
         except Exception:
             logger.exception(
                 "relay of %d events failed; the sweeper will send them",
@@ -222,11 +229,20 @@ class OutboxRelay:
             )
 
     def sweep(self) -> int:
-        return self._send(
-            _pending()
-            .order_by(DbOutboxEvent.created_at)
-            .limit(self._batch_size)
-        )
+        sent, remaining = 0, self._batch_size
+        while remaining > 0:
+            limit = min(CHUNK_SIZE, remaining)
+            selected, chunk_sent = self._send(
+                _pending()
+                # Rows that keep failing sink behind fresh ones
+                .order_by(DbOutboxEvent.attempts, DbOutboxEvent.created_at)
+                .limit(limit)
+            )
+            sent += chunk_sent
+            remaining -= selected
+            if selected < limit:
+                break
+        return sent
 
     def purge(self, sent_before: datetime) -> int:
         with Session(self._engine) as session, session.begin():
@@ -234,10 +250,11 @@ class OutboxRelay:
                 delete(DbOutboxEvent).where(DbOutboxEvent.sent_at < sent_before)
             ).rowcount
 
-    def _send(self, query: Select[tuple[DbOutboxEvent]]) -> int:
+    def _send(self, query: Select[tuple[DbOutboxEvent]]) -> tuple[int, int]:
         sent = 0
         with Session(self._engine) as session, session.begin():
-            for db_outbox_event in session.scalars(query).all():
+            db_outbox_events = session.scalars(query).all()
+            for db_outbox_event in db_outbox_events:
                 try:
                     self._message_sender.send(
                         db_outbox_event.event_type,
@@ -250,10 +267,11 @@ class OutboxRelay:
                         "sending event %s failed; the next sweep retries it",
                         db_outbox_event.event_id,
                     )
+                    db_outbox_event.attempts += 1
                     continue
                 db_outbox_event.sent_at = datetime.now(UTC)
                 sent += 1
-        return sent
+        return len(db_outbox_events), sent
 
 
 def _pending() -> Select[tuple[DbOutboxEvent]]:

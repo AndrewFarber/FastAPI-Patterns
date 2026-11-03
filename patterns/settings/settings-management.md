@@ -23,7 +23,7 @@ All configuration goes through one typed, frozen `Settings` object, composed fro
 - **One concern per file**, its sub-model named after its field on the root plus `Settings` (`events` → `EventsSettings`, `switches` → `SwitchesSettings`). Variants of a concern get their own files (`db.py` imports `db_iam.py`).
 - **Only the root is a `BaseSettings`.** Sub-models are plain `BaseModel`; only the root reads the environment.
 - **`settings.py` only composes:** the sub-models, the cross-concern rules, and the sources. App-wide values live in `app.py` like any other concern.
-- **Concerns don't import each other.** Cross-concern rules ("no debug in prod", "no password DB auth in prod") are a `model_validator` on the root; rules within a concern go on its sub-model.
+- **Concerns don't import each other.** Cross-concern rules ("no debug in prod", "no password DB auth in prod", "verify-full in prod") are a `model_validator` on the root; rules within a concern go on its sub-model.
 - **`frozen=True` and `extra="forbid"` on every model.** The root's `frozen` doesn't reach sub-models; `forbid` turns a typo (`DB__POOL_SZIE`) into a startup error.
 - **Required concerns have no default; safe concerns use `Field(default_factory=...)`; optional subsystems are `X | None = None`.** Code checks `settings.smtp is None`, never a separate `smtp_enabled` flag.
 - **Defaults only for safe values** (log level, empty CORS list), never for credentials or hosts.
@@ -93,11 +93,11 @@ class Settings(BaseSettings):
         frozen=True,
     )
 
+    app: AppSettings
     db: DbSettings
     events: EventsSettings
     switches: SwitchesSettings
 
-    app: AppSettings = Field(default_factory=AppSettings)
     cors: CorsSettings = Field(default_factory=CorsSettings)
     log: LogSettings = Field(default_factory=LogSettings)
     features: FeaturesSettings = Field(default_factory=FeaturesSettings)
@@ -113,6 +113,8 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "password DB auth is for local use; prod uses iam"
                 )
+            if self.db.sslmode != "verify-full":
+                raise ValueError("prod DB connections must use verify-full")
         return self
 
     @classmethod

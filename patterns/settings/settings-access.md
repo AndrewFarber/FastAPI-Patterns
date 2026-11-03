@@ -88,7 +88,11 @@ def create_app() -> FastAPI:
     logger.info("settings loaded: %s", settings.model_dump_json())
 
     app = FastAPI(
-        title=settings.app.name, debug=settings.app.debug, lifespan=lifespan
+        title=settings.app.name,
+        debug=settings.app.debug,
+        lifespan=lifespan,
+        # Prod doesn't publish its schema; None also turns off /docs and /redoc
+        openapi_url=None if settings.app.is_prd else "/openapi.json",
     )
     app.add_middleware(
         CORSMiddleware,

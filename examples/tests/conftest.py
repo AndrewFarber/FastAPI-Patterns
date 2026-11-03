@@ -22,6 +22,7 @@ from app.services.orders.infrastructure.models import DbOrder
 from app.services.users.infrastructure.models import DbUser
 
 TEST_VALUES: dict[str, dict[str, Any]] = {
+    "app": {"is_prd": False},
     "db": {
         "host": "localhost",
         "user": "test",

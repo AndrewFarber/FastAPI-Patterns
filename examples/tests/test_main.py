@@ -22,6 +22,18 @@ def test_app_serves_healthz_with_engine_and_cors(create_app, aws, monkeypatch):
     )
 
 
+def test_prod_serves_no_schema_or_docs(create_app, ca_bundle, monkeypatch):
+    assert TestClient(create_app()).get("/openapi.json").status_code == 200
+    monkeypatch.setenv("APP__IS_PRD", "true")
+    monkeypatch.setenv("DB__AUTH", '{"method": "iam", "region": "us-east-1"}')
+    monkeypatch.setenv("DB__SSLMODE", "verify-full")
+    monkeypatch.setenv("DB__SSLROOTCERT", str(ca_bundle))
+    get_settings.cache_clear()
+    client = TestClient(create_app())
+    for path in ("/openapi.json", "/docs", "/redoc"):
+        assert client.get(path).status_code == 404
+
+
 def test_bad_config_fails_create_app(create_app, monkeypatch):
     monkeypatch.delenv("DB__HOST")
     get_settings.cache_clear()

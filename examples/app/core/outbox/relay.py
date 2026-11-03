@@ -11,6 +11,10 @@ from app.core.outbox.models import DbOutboxEvent
 
 logger = logging.getLogger(__name__)
 
+# Rows sent per transaction: a timeout rolls back only the rows in flight,
+# and a slow send holds few locks
+CHUNK_SIZE = 10
+
 
 class MessageSender(Protocol):
     def send(self, event_type: str, body: str) -> None: ...
@@ -31,7 +35,9 @@ class OutboxRelay:
         if not event_ids:
             return
         try:
-            self._send(_pending().where(DbOutboxEvent.event_id.in_(event_ids)))
+            for start in range(0, len(event_ids), CHUNK_SIZE):
+                chunk = event_ids[start : start + CHUNK_SIZE]
+                self._send(_pending().where(DbOutboxEvent.event_id.in_(chunk)))
         except Exception:
             logger.exception(
                 "relay of %d events failed; the sweeper will send them",
@@ -39,11 +45,20 @@ class OutboxRelay:
             )
 
     def sweep(self) -> int:
-        return self._send(
-            _pending()
-            .order_by(DbOutboxEvent.created_at)
-            .limit(self._batch_size)
-        )
+        sent, remaining = 0, self._batch_size
+        while remaining > 0:
+            limit = min(CHUNK_SIZE, remaining)
+            selected, chunk_sent = self._send(
+                _pending()
+                # Rows that keep failing sink behind fresh ones
+                .order_by(DbOutboxEvent.attempts, DbOutboxEvent.created_at)
+                .limit(limit)
+            )
+            sent += chunk_sent
+            remaining -= selected
+            if selected < limit:
+                break
+        return sent
 
     def purge(self, sent_before: datetime) -> int:
         with Session(self._engine) as session, session.begin():
@@ -51,10 +66,11 @@ class OutboxRelay:
                 delete(DbOutboxEvent).where(DbOutboxEvent.sent_at < sent_before)
             ).rowcount
 
-    def _send(self, query: Select[tuple[DbOutboxEvent]]) -> int:
+    def _send(self, query: Select[tuple[DbOutboxEvent]]) -> tuple[int, int]:
         sent = 0
         with Session(self._engine) as session, session.begin():
-            for db_outbox_event in session.scalars(query).all():
+            db_outbox_events = session.scalars(query).all()
+            for db_outbox_event in db_outbox_events:
                 try:
                     self._message_sender.send(
                         db_outbox_event.event_type,
@@ -67,10 +83,11 @@ class OutboxRelay:
                         "sending event %s failed; the next sweep retries it",
                         db_outbox_event.event_id,
                     )
+                    db_outbox_event.attempts += 1
                     continue
                 db_outbox_event.sent_at = datetime.now(UTC)
                 sent += 1
-        return sent
+        return len(db_outbox_events), sent
 
 
 def _pending() -> Select[tuple[DbOutboxEvent]]:

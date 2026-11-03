@@ -14,6 +14,7 @@ class DbOutboxEvent(Base):
     __table_args__ = (
         Index(
             "ix_outbox_pending",
+            "attempts",
             "created_at",
             postgresql_where=text("sent_at IS NULL"),
         ),
@@ -26,6 +27,7 @@ class DbOutboxEvent(Base):
         JSON().with_variant(JSONB(), "postgresql")
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(default=0)
     sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), index=True
     )

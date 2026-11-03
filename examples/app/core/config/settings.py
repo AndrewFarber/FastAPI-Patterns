@@ -27,11 +27,11 @@ class Settings(BaseSettings):
         frozen=True,
     )
 
+    app: AppSettings
     db: DbSettings
     events: EventsSettings
     switches: SwitchesSettings
 
-    app: AppSettings = Field(default_factory=AppSettings)
     cors: CorsSettings = Field(default_factory=CorsSettings)
     log: LogSettings = Field(default_factory=LogSettings)
     features: FeaturesSettings = Field(default_factory=FeaturesSettings)
@@ -47,6 +47,8 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "password DB auth is for local use; prod uses iam"
                 )
+            if self.db.sslmode != "verify-full":
+                raise ValueError("prod DB connections must use verify-full")
         return self
 
     @classmethod

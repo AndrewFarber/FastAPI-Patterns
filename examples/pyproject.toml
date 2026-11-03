@@ -5,11 +5,11 @@ description = "Runnable, tested code shown in the FastAPI Patterns vault"
 requires-python = ">=3.13"
 dependencies = [
     "boto3>=1.35",
-    "fastapi>=0.115",
+    "fastapi>=0.121",
     "psycopg[binary]>=3.2",
     "pydantic-settings[aws-secrets-manager,aws-systems-manager]>=2.16",
     "sqlalchemy>=2",
-    "uvicorn>=0.30",
+    "uvicorn>=0.31",
 ]
 
 [dependency-groups]
