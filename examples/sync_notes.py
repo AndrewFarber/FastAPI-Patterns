@@ -5,7 +5,8 @@ where <path> ends in .py (a python block) or is Dockerfile (a dockerfile block),
 and examples/<path> is a file. Every topic's notes show the same example app.
 
 A block that shows only part of a file says so on its first line,
-"# main.py (fragment)", and is left alone. A bare "# <path>" that doesn't
+"# main.py (fragment)", and one that shows code no example file has says
+"# main.py (sketch)"; both are left alone. A bare "# <path>" that doesn't
 resolve is an error: a typo or a moved file would otherwise turn a synced
 block into an unchecked one.
 
@@ -36,7 +37,7 @@ def synced(note: Path, missing: list[str]) -> str:
         if not source.is_file():
             missing.append(
                 f"{note.relative_to(PATTERNS.parent)}: # {match['path']} "
-                "(label fragments as '(fragment)')"
+                "(label it '(fragment)' or '(sketch)')"
             )
             return match[0]
         return f"```{match['lang']}\n# {match['path']}\n{source.read_text()}```"

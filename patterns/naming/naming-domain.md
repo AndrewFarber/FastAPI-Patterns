@@ -5,7 +5,6 @@ related:
   - "[[naming-guide]]"
   - "[[naming]]"
   - "[[layout]]"
-  - "[[services-calls]]"
   - "[[services-events]]"
 ---
 

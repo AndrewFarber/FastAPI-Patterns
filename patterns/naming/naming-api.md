@@ -4,10 +4,8 @@ category: conventions
 related:
   - "[[naming-guide]]"
   - "[[naming]]"
-  - "[[naming-domain]]"
   - "[[layout]]"
   - "[[services-calls]]"
-  - "[[services-events]]"
 ---
 
 # Naming: API

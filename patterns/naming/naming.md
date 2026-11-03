@@ -6,7 +6,6 @@ related:
   - "[[naming-domain]]"
   - "[[naming-infrastructure]]"
   - "[[naming-api]]"
-  - "[[layout]]"
 ---
 
 # Naming
@@ -29,7 +28,7 @@ One way to name each kind of thing, so a name says what it holds or does and a r
   - **Files mirror `app/`** one module to one file: `app/core/db/engine.py` → `tests/core/db/test_engine.py`. A flow through the whole app goes in `tests/test_main.py`.
   - **Names are sentences:** `test_<subject>_<behavior>`, `test_save_of_a_stale_copy_is_a_conflict`, never a bare noun like `test_cors`.
   - **Fakes are `Fake<Protocol>`:** `FakeOrderRepository`, `FakeEventPublisher`; shared fakes live in a `fakes.py` next to the tests that use them.
-  - **Fixtures:** a noun for a value (`engine`, `client`), `create_` for a factory (`create_app`, `create_test_env`).
+  - **Fixtures:** a noun for a value (`engine`, `client`), `create_` for a factory (`create_app`). A fixture used only for its side effect names the state it sets up (`test_env`, `clean_env`, `aws_credentials`), or what it puts back when it undoes a change (`restore_logging`). A helper that isn't a fixture follows the function rules: `create_test_env()`.
 - **`ruff` checks the casing** and the `Error` suffix (pep8-naming, `N`); the rest is review.
 
 ## Code example

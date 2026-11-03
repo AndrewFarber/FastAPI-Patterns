@@ -62,7 +62,7 @@ def create_app() -> FastAPI:
     app.include_router(orders_router)
 
     @app.get("/healthz")
-    def healthz(settings: SettingsDep) -> dict[str, str]:
+    def get_healthz(settings: SettingsDep) -> dict[str, str]:
         return {"status": "ok", "app": settings.app.name}
 
     return app

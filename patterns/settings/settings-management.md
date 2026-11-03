@@ -11,6 +11,7 @@ related:
   - "[[services-events]]"
   - "[[settings-feature-flags]]"
   - "[[layout-core]]"
+  - "[[settings-refreshing-values]]"
 ---
 
 # Settings management

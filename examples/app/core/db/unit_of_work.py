@@ -20,12 +20,12 @@ class UnitOfWork:
 
     def __exit__(
         self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
+        error_type: type[BaseException] | None,
+        error: BaseException | None,
+        traceback: TracebackType | None,
     ) -> None:
         with self.session:
-            if exc_type is not None:
+            if error_type is not None:
                 self.session.rollback()
                 return
             self.session.commit()

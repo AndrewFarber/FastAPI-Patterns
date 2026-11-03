@@ -6,7 +6,6 @@ related:
   - "[[naming]]"
   - "[[naming-domain]]"
   - "[[layout]]"
-  - "[[services-events]]"
 ---
 
 # Naming: infrastructure

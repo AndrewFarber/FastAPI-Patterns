@@ -17,6 +17,8 @@ Static flags are typed bools on `FeaturesSettings`, default off, changed by rede
 - **Pass `FeaturesSettings` in.** Only entry points read `Settings` ([[settings-access]]); the use case gets only flags, and its tests build `FeaturesSettings(new_checkout=True)`.
 
 ## Code example
+The example app has no checkout or export feature, so the blocks after `features.py` are sketches.
+
 ```python
 # app/core/config/features.py
 from pydantic import BaseModel, ConfigDict
@@ -32,7 +34,7 @@ class FeaturesSettings(BaseModel):
 Whole endpoints: `create_app()` mounts the router only when the flag is on, so the routes don't exist when it's off (404, absent from OpenAPI):
 
 ```python
-# app/main.py (fragment)
+# app/main.py (sketch)
 if settings.features.bulk_export:
     app.include_router(exports_router)
 ```
@@ -40,19 +42,25 @@ if settings.features.bulk_export:
 Behavior inside an endpoint: the route reads the flags from `SettingsDep` and passes them to the use case, which never reads settings itself:
 
 ```python
-# app/services/orders/api/router.py (fragment)
+# app/services/orders/api/router.py (sketch)
 @router.post("/checkout", status_code=201)
 def post_order_checkout(
-    body: CheckoutIn, order_repository: OrderRepositoryDep, settings: SettingsDep
+    body: CheckoutIn,
+    order_repository: OrderRepositoryDep,
+    settings: SettingsDep,
 ) -> OrderRead:
     order = checkout(
-        CheckoutCommand(cart_id=body.cart_id), order_repository, settings.features
+        CheckoutCommand(cart_id=body.cart_id),
+        order_repository,
+        settings.features,
     )
-    return OrderRead(id=order.id, user_id=order.user_id, item=order.item, status=order.status)
+    return OrderRead(
+        id=order.id, user_id=order.user_id, item=order.item, status=order.status
+    )
 ```
 
 ```python
-# app/services/orders/use_cases/checkout.py (fragment)
+# app/services/orders/use_cases/checkout.py (sketch)
 def checkout(
     command: CheckoutCommand,
     order_repository: OrderRepository,

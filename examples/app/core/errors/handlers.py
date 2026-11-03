@@ -15,13 +15,18 @@ STATUS_CODES: dict[type[DomainError], int] = {
 }
 
 
-def domain_error_response(request: Request, exc: Exception) -> JSONResponse:
+def domain_error_response(request: Request, error: Exception) -> JSONResponse:
     status = next(
-        (code for kind, code in STATUS_CODES.items() if isinstance(exc, kind)),
+        (
+            code
+            for kind, code in STATUS_CODES.items()
+            if isinstance(error, kind)
+        ),
         400,
     )
     return JSONResponse(
-        {"detail": str(exc), "error": type(exc).__name__}, status_code=status
+        {"detail": str(error), "error": type(error).__name__},
+        status_code=status,
     )
 
 

@@ -6,6 +6,7 @@ related:
   - "[[settings-refreshing-values]]"
   - "[[settings-db-iam-auth]]"
   - "[[settings-testing]]"
+  - "[[settings-management]]"
 ---
 
 # Settings from AWS sources
@@ -37,8 +38,10 @@ Read Secrets Manager and Parameter Store as pydantic-settings sources, added onl
 uv add "pydantic-settings[aws-secrets-manager,aws-systems-manager]"
 ```
 
+`Settings` adds each source only when its env var is set; the full file is in [[settings-management]]:
+
 ```python
-# app/core/config/settings.py (fragment: the full file is in settings-management)
+# app/core/config/settings.py (fragment)
 import os
 
 from pydantic_settings import (
@@ -64,9 +67,13 @@ class Settings(BaseSettings):
         sources = [init_settings, env_settings]
 
         if secret_id := os.environ.get("AWS_SECRETS_MANAGER_SECRET_ID"):
-            sources.append(AWSSecretsManagerSettingsSource(settings_cls, secret_id))
+            sources.append(
+                AWSSecretsManagerSettingsSource(settings_cls, secret_id)
+            )
         if ssm_path := os.environ.get("AWS_SSM_PATH"):
-            sources.append(AWSSystemsManagerSettingsSource(settings_cls, ssm_path))
+            sources.append(
+                AWSSystemsManagerSettingsSource(settings_cls, ssm_path)
+            )
 
         return tuple(sources)
 ```

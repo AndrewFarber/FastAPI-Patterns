@@ -3,6 +3,8 @@ title: "Refreshing settings values"
 category: project-structure
 related:
   - "[[settings-guide]]"
+  - "[[settings-aws-sources]]"
+  - "[[services-calls]]"
 ---
 
 # Refreshing settings values

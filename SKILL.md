@@ -34,7 +34,7 @@ Then ask which to implement with AskUserQuestion (`multiSelect: true`, at most f
 Each note prescribes one way to do its job. When the codebase already does it another way, say so and ask whether to migrate rather than adding a second way.
 
 ## 5. Implement
-- Follow the note's **Rules** and **Code example**. A code block whose first line is a full path (`# app/core/config/db.py`) is a tested file under `examples/`; read the full file there when the block isn't enough. Blocks marked `(fragment)` show part of a file.
+- Follow the note's **Rules** and **Code example**. A code block whose first line is a full path (`# app/core/config/db.py`) is a tested file under `examples/`; read the full file there when the block isn't enough. Blocks marked `(fragment)` show part of a file there; blocks marked `(sketch)` show code the example app doesn't have.
 - Adapt names to the codebase (`shop-api`, module paths), not the other way round.
 - Change only what the chosen patterns need; leave unrelated code as it is.
 - Finish with one short list: which patterns were applied, where, and any codebase fits not yet taken.

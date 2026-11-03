@@ -3,6 +3,7 @@ title: "Services: calls"
 category: project-structure
 related:
   - "[[services-guide]]"
+  - "[[settings-refreshing-values]]"
 ---
 
 # Services: calls
