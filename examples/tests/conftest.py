@@ -15,11 +15,11 @@ from sqlalchemy.pool import StaticPool
 from app.core.config.settings import Settings, get_settings
 from app.core.db.base import Base
 from app.core.events.consumer import EventConsumer
-from app.core.events.models import ProcessedEventRow
-from app.core.outbox.models import OutboxRow
+from app.core.events.models import DbProcessedEvent
+from app.core.outbox.models import DbOutboxEvent
 from app.core.outbox.relay import OutboxRelay
-from app.services.orders.infrastructure.models import OrderRow
-from app.services.users.infrastructure.models import UserRow
+from app.services.orders.infrastructure.models import DbOrder
+from app.services.users.infrastructure.models import DbUser
 
 TEST_VALUES: dict[str, dict[str, Any]] = {
     "db": {
@@ -105,10 +105,10 @@ def ca_bundle(tmp_path):
 @pytest.fixture
 def engine() -> Iterator[Engine]:
     tables = [
-        UserRow.__table__,
-        OrderRow.__table__,
-        OutboxRow.__table__,
-        ProcessedEventRow.__table__,
+        DbUser.__table__,
+        DbOrder.__table__,
+        DbOutboxEvent.__table__,
+        DbProcessedEvent.__table__,
     ]
     schemas = {table.schema: None for table in tables}
     engine = create_engine(

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.db.base import Base
 
 
-class OrderRow(Base):
+class DbOrder(Base):
     __tablename__ = "orders"
     __table_args__ = {"schema": "orders"}
 

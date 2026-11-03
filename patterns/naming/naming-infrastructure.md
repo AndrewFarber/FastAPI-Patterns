@@ -15,11 +15,11 @@ related:
 Names in a service's `infrastructure/` and in the database, building on [[naming]]. ORM classes never share a name with the entities they store, tables read like SQL, and every constraint has a predictable name that migrations can refer to.
 
 ## Rules
-- **ORM classes are `<Entity>Row`:** `OrderRow`, `UserRow`, `OutboxRow`, `ProcessedEventRow`. `Order` stays free for the entity, and a `Row` never crosses into the domain.
+- **ORM classes are `Db<Entity>`:** `DbOrder`, `DbUser`, `DbOutboxEvent`, `DbProcessedEvent`, named after what one row is. `Order` stays free for the entity, and a `Db` class never crosses into the domain.
 - **Tables are the plural of what one row is,** in the owning service's schema ([[layout]]): `orders.orders`, `users.users`, `events.processed_events`. A plural avoids reserved words like `user` and `order`, which singular tables would have to quote in every hand-written query. A well-known pattern name stays as it is: `events.outbox`.
 - **Columns are `snake_case` nouns;** foreign keys are `<entity>_id` (`user_id`), timestamps are `<past_verb>_at` (`created_at`, `sent_at`).
 - **Constraint names come from a naming convention** on `Base.metadata`, so every index, key, and check has a deterministic name across databases and migrations. Name a constraint by hand only when the convention can't express it, like a partial index: `ix_outbox_pending`.
-- **Map rows to entities with `to_entity(row)`,** a module function next to the repository that uses it. Writes list their columns where they write: `add` builds a new `Row`, `save` issues a versioned `UPDATE`, and neither needs a reverse mapper.
+- **Map rows to entities with `to_entity(row)`,** a module function next to the repository that uses it. Writes list their columns where they write: `add` builds a new `DbOrder`, `save` issues a versioned `UPDATE`, and neither needs a reverse mapper.
 - **Implementations put their technology first** ([[naming-domain]]): `SqlOrderRepository`, `SsmOrderSwitches`.
 
 ## Code example
@@ -49,7 +49,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.db.base import Base
 
 
-class OrderRow(Base):
+class DbOrder(Base):
     __tablename__ = "orders"
     __table_args__ = {"schema": "orders"}
 

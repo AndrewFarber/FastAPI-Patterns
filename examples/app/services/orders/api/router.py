@@ -5,7 +5,7 @@ from app.services.orders.api.dependencies import (
     OrderSwitchesDep,
     UserDirectoryDep,
 )
-from app.services.orders.api.schemas import OrderCreate, OrderOut
+from app.services.orders.api.schemas import OrderCreate, OrderRead
 from app.services.orders.domain.entities import OrderStatus
 from app.services.orders.use_cases.place_order import (
     PlaceOrderCommand,
@@ -21,14 +21,14 @@ def post_order(
     order_repository: OrderRepositoryDep,
     user_directory: UserDirectoryDep,
     order_switches: OrderSwitchesDep,
-) -> OrderOut:
+) -> OrderRead:
     order = place_order(
         PlaceOrderCommand(user_id=body.user_id, item=body.item),
         order_repository,
         user_directory,
         order_switches,
     )
-    return OrderOut(
+    return OrderRead(
         id=order.id, user_id=order.user_id, item=order.item, status=order.status
     )
 
@@ -38,9 +38,9 @@ def get_orders(
     user_id: int,
     order_repository: OrderRepositoryDep,
     status: OrderStatus | None = None,
-) -> list[OrderOut]:
+) -> list[OrderRead]:
     return [
-        OrderOut(
+        OrderRead(
             id=order.id,
             user_id=order.user_id,
             item=order.item,

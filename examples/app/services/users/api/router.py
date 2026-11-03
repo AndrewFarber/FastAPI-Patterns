@@ -2,7 +2,7 @@ from fastapi import APIRouter
 
 from app.core.dependencies.db import UnitOfWorkDep
 from app.services.users.api.dependencies import UserRepositoryDep
-from app.services.users.api.schemas import UserCreate, UserOut
+from app.services.users.api.schemas import UserCreate, UserRead
 from app.services.users.use_cases.deactivate_user import (
     DeactivateUserCommand,
     deactivate_user,
@@ -16,9 +16,9 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.post("", status_code=201)
-def post_user(body: UserCreate, user_repository: UserRepositoryDep) -> UserOut:
+def post_user(body: UserCreate, user_repository: UserRepositoryDep) -> UserRead:
     user = register_user(RegisterUserCommand(name=body.name), user_repository)
-    return UserOut(id=user.id, name=user.name, status=user.status)
+    return UserRead(id=user.id, name=user.name, status=user.status)
 
 
 @router.post("/{user_id}/deactivate", status_code=204)

@@ -3,10 +3,10 @@ from sqlalchemy.orm import Session
 
 from app.services.users.domain.entities import User, UserStatus
 from app.services.users.domain.errors import UserChangedError
-from app.services.users.infrastructure.models import UserRow
+from app.services.users.infrastructure.models import DbUser
 
 
-def to_entity(row: UserRow) -> User:
+def to_entity(row: DbUser) -> User:
     return User(
         id=row.id,
         name=row.name,
@@ -20,14 +20,14 @@ class SqlUserRepository:
         self._session = session
 
     def get(self, user_id: int) -> User | None:
-        row = self._session.get(UserRow, user_id)
+        row = self._session.get(DbUser, user_id)
         return None if row is None else to_entity(row)
 
     def get_for_share(self, user_id: int) -> User | None:
         # FOR SHARE: the user can't change until this transaction ends
         query = (
-            select(UserRow)
-            .where(UserRow.id == user_id)
+            select(DbUser)
+            .where(DbUser.id == user_id)
             .with_for_update(read=True)
         )
         row = self._session.scalars(
@@ -36,7 +36,7 @@ class SqlUserRepository:
         return None if row is None else to_entity(row)
 
     def add(self, user: User) -> User:
-        row = UserRow(name=user.name, status=user.status)
+        row = DbUser(name=user.name, status=user.status)
         self._session.add(row)
         self._session.flush()
         user.id, user.version = row.id, row.version
@@ -44,8 +44,8 @@ class SqlUserRepository:
 
     def save(self, user: User) -> None:
         result = self._session.execute(
-            update(UserRow)
-            .where(UserRow.id == user.id, UserRow.version == user.version)
+            update(DbUser)
+            .where(DbUser.id == user.id, DbUser.version == user.version)
             .values(
                 name=user.name, status=user.status, version=user.version + 1
             )

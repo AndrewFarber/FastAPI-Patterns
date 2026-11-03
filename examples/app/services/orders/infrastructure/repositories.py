@@ -3,10 +3,10 @@ from sqlalchemy.orm import Session
 
 from app.services.orders.domain.entities import Order, OrderStatus
 from app.services.orders.domain.errors import OrderChangedError
-from app.services.orders.infrastructure.models import OrderRow
+from app.services.orders.infrastructure.models import DbOrder
 
 
-def to_entity(row: OrderRow) -> Order:
+def to_entity(row: DbOrder) -> Order:
     return Order(
         id=row.id,
         user_id=row.user_id,
@@ -21,7 +21,7 @@ class SqlOrderRepository:
         self._session = session
 
     def add(self, order: Order) -> Order:
-        row = OrderRow(
+        row = DbOrder(
             user_id=order.user_id, item=order.item, status=order.status
         )
         self._session.add(row)
@@ -32,16 +32,16 @@ class SqlOrderRepository:
     def list_for_user(
         self, user_id: int, status: OrderStatus | None = None
     ) -> list[Order]:
-        query = select(OrderRow).where(OrderRow.user_id == user_id)
+        query = select(DbOrder).where(DbOrder.user_id == user_id)
         if status is not None:
-            query = query.where(OrderRow.status == status)
+            query = query.where(DbOrder.status == status)
         rows = self._session.scalars(query)
         return [to_entity(row) for row in rows]
 
     def save(self, order: Order) -> None:
         result = self._session.execute(
-            update(OrderRow)
-            .where(OrderRow.id == order.id, OrderRow.version == order.version)
+            update(DbOrder)
+            .where(DbOrder.id == order.id, DbOrder.version == order.version)
             .values(
                 item=order.item, status=order.status, version=order.version + 1
             )

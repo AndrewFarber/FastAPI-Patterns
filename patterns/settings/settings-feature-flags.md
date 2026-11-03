@@ -44,11 +44,11 @@ Behavior inside an endpoint: the route reads the flags from `SettingsDep` and pa
 @router.post("/checkout", status_code=201)
 def post_order_checkout(
     body: CheckoutIn, order_repository: OrderRepositoryDep, settings: SettingsDep
-) -> OrderOut:
+) -> OrderRead:
     order = checkout(
         CheckoutCommand(cart_id=body.cart_id), order_repository, settings.features
     )
-    return OrderOut(id=order.id, user_id=order.user_id, item=order.item, status=order.status)
+    return OrderRead(id=order.id, user_id=order.user_id, item=order.item, status=order.status)
 ```
 
 ```python

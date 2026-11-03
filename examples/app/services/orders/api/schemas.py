@@ -6,7 +6,7 @@ class OrderCreate(BaseModel):
     item: str = Field(min_length=1, max_length=200)
 
 
-class OrderOut(BaseModel):
+class OrderRead(BaseModel):
     id: int
     user_id: int
     item: str

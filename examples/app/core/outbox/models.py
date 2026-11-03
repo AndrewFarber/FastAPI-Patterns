@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.db.base import Base
 
 
-class OutboxRow(Base):
+class DbOutboxEvent(Base):
     __tablename__ = "outbox"
     __table_args__ = (
         Index(

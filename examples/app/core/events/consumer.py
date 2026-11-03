@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db.unit_of_work import UnitOfWork
 from app.core.events.messages import decode, from_payload, get_event_name
-from app.core.events.models import ProcessedEventRow
+from app.core.events.models import DbProcessedEvent
 from app.core.outbox.relay import OutboxRelay
 from app.shared.events.base import DomainEvent
 
@@ -56,9 +56,9 @@ class EventConsumer:
 
     def purge(self, processed_before: datetime) -> int:
         with Session(self._engine) as session, session.begin():
-            query = delete(ProcessedEventRow).where(
-                ProcessedEventRow.consumer == self.name,
-                ProcessedEventRow.processed_at < processed_before,
+            query = delete(DbProcessedEvent).where(
+                DbProcessedEvent.consumer == self.name,
+                DbProcessedEvent.processed_at < processed_before,
             )
             return session.execute(query).rowcount
 
@@ -77,13 +77,13 @@ class EventConsumer:
         with UnitOfWork(self._engine, self._relay) as unit_of_work:
             if (
                 unit_of_work.session.get(
-                    ProcessedEventRow, (event.event_id, self.name)
+                    DbProcessedEvent, (event.event_id, self.name)
                 )
                 is not None
             ):
                 return
             unit_of_work.session.add(
-                ProcessedEventRow(
+                DbProcessedEvent(
                     event_id=event.event_id,
                     consumer=self.name,
                     processed_at=datetime.now(UTC),

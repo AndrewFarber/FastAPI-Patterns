@@ -4,7 +4,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.db.base import Base
 
 
-class UserRow(Base):
+class DbUser(Base):
     __tablename__ = "users"
     __table_args__ = {"schema": "users"}
 

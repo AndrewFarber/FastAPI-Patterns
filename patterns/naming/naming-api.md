@@ -21,7 +21,7 @@ Names at a service's entry points: `api/`, `event_handlers/`, and `public.py` ([
 - **Path parameters are `<resource>_id`:** `user_id`, never `id`.
 - **Route functions are the method plus the resource,** singular when it handles one item and plural when it returns many: `post_order`, `get_order`, `get_orders`, `patch_order`. An action appends its verb: `post_user_deactivate`. Never the use case's name; the route calls `place_order`, it isn't it.
 - **Request schemas name the intent:** `<Resource>Create` (`POST`), `<Resource>Replace` (`PUT`, every field required), `<Resource>Patch` (`PATCH`, every field optional). An action's input, when it has one, is `<UseCase>In` (`DeactivateUserIn`). The body parameter is always `body`.
-- **Response schemas are `<Resource>Out`:** `OrderOut`, one per resource.
+- **Response schemas are `<Resource>Read`:** `OrderRead`, one per resource, the same CRUD word as the request schemas. It is what a client reads back from every method, `POST` and `PATCH` included.
 - **Dependencies:** the provider is `get_<collaborator>` and its `Annotated` alias `<Collaborator>Dep`: `get_order_repository`, `OrderRepositoryDep`. The route's parameter takes the collaborator's name: `order_repository: OrderRepositoryDep`.
 - **Each `api/` module has one `router`,** imported under the service's name where it's mounted: `router as orders_router`.
 - **Event handlers:** the file is named after the event and the function is `handle_<event>`: `event_handlers/user_deactivated.py`, `handle_user_deactivated()`. Each package's `register()` wires its handlers.
@@ -31,11 +31,11 @@ Names at a service's entry points: `api/`, `event_handlers/`, and `public.py` ([
 
 | Method + path | Route function | Body | Response |
 | --- | --- | --- | --- |
-| `GET /orders?user_id=&status=` | `get_orders` | | `list[OrderOut]` |
-| `POST /orders` | `post_order` | `OrderCreate` | `OrderOut` |
-| `GET /orders/{order_id}` | `get_order` | | `OrderOut` |
-| `PUT /orders/{order_id}` | `put_order` | `OrderReplace` | `OrderOut` |
-| `PATCH /orders/{order_id}` | `patch_order` | `OrderPatch` | `OrderOut` |
+| `GET /orders?user_id=&status=` | `get_orders` | | `list[OrderRead]` |
+| `POST /orders` | `post_order` | `OrderCreate` | `OrderRead` |
+| `GET /orders/{order_id}` | `get_order` | | `OrderRead` |
+| `PUT /orders/{order_id}` | `put_order` | `OrderReplace` | `OrderRead` |
+| `PATCH /orders/{order_id}` | `patch_order` | `OrderPatch` | `OrderRead` |
 | `DELETE /orders/{order_id}` | `delete_order` | | 204 |
 | `POST /users/{user_id}/deactivate` | `post_user_deactivate` | `DeactivateUserIn`, if any | 204 |
 
@@ -45,7 +45,7 @@ from fastapi import APIRouter
 
 from app.core.dependencies.db import UnitOfWorkDep
 from app.services.users.api.dependencies import UserRepositoryDep
-from app.services.users.api.schemas import UserCreate, UserOut
+from app.services.users.api.schemas import UserCreate, UserRead
 from app.services.users.use_cases.deactivate_user import (
     DeactivateUserCommand,
     deactivate_user,
@@ -59,9 +59,9 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.post("", status_code=201)
-def post_user(body: UserCreate, user_repository: UserRepositoryDep) -> UserOut:
+def post_user(body: UserCreate, user_repository: UserRepositoryDep) -> UserRead:
     user = register_user(RegisterUserCommand(name=body.name), user_repository)
-    return UserOut(id=user.id, name=user.name, status=user.status)
+    return UserRead(id=user.id, name=user.name, status=user.status)
 
 
 @router.post("/{user_id}/deactivate", status_code=204)

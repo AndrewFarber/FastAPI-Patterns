@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 
 from app.core.events.consumer import EventConsumer
 from app.core.events.messages import encode, get_event_name, to_payload
-from app.core.events.models import ProcessedEventRow
-from app.core.outbox.models import OutboxRow
+from app.core.events.models import DbProcessedEvent
+from app.core.outbox.models import DbOutboxEvent
 from app.services.users import UserDeactivated
 
 
@@ -66,7 +66,8 @@ def test_handlers_publish_through_their_own_outbox(
     consumer.handle({"Records": [create_record(UserDeactivated(user_id=1))]})
     with Session(engine) as session:
         assert [
-            row.payload["user_id"] for row in session.scalars(select(OutboxRow))
+            row.payload["user_id"]
+            for row in session.scalars(select(DbOutboxEvent))
         ] == [2]
     assert len(message_sender.sent) == 1
 
@@ -89,5 +90,5 @@ def test_purge_deletes_only_this_consumers_old_records(consumer, engine, relay):
     assert consumer.purge(datetime.now(UTC) + timedelta(seconds=1)) == 1
     with Session(engine) as session:
         assert [
-            row.consumer for row in session.scalars(select(ProcessedEventRow))
+            row.consumer for row in session.scalars(select(DbProcessedEvent))
         ] == ["billing"]

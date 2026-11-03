@@ -155,7 +155,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.core.events.messages import get_event_name, to_payload
-from app.core.outbox.models import OutboxRow
+from app.core.outbox.models import DbOutboxEvent
 from app.shared.events.base import DomainEvent
 
 
@@ -166,7 +166,7 @@ class OutboxEventPublisher:
 
     def publish(self, event: DomainEvent) -> None:
         self._session.add(
-            OutboxRow(
+            DbOutboxEvent(
                 event_id=event.event_id,
                 event_type=get_event_name(type(event)),
                 payload=to_payload(event),
@@ -189,7 +189,7 @@ from sqlalchemy import Engine, Select, delete, select
 from sqlalchemy.orm import Session
 
 from app.core.events.messages import encode
-from app.core.outbox.models import OutboxRow
+from app.core.outbox.models import DbOutboxEvent
 
 logger = logging.getLogger(__name__)
 
@@ -213,7 +213,7 @@ class OutboxRelay:
         if not event_ids:
             return
         try:
-            self._send(_pending().where(OutboxRow.event_id.in_(event_ids)))
+            self._send(_pending().where(DbOutboxEvent.event_id.in_(event_ids)))
         except Exception:
             logger.exception(
                 "relay of %d events failed; the sweeper will send them",
@@ -222,16 +222,18 @@ class OutboxRelay:
 
     def sweep(self) -> int:
         return self._send(
-            _pending().order_by(OutboxRow.created_at).limit(self._batch_size)
+            _pending()
+            .order_by(DbOutboxEvent.created_at)
+            .limit(self._batch_size)
         )
 
     def purge(self, sent_before: datetime) -> int:
         with Session(self._engine) as session, session.begin():
             return session.execute(
-                delete(OutboxRow).where(OutboxRow.sent_at < sent_before)
+                delete(DbOutboxEvent).where(DbOutboxEvent.sent_at < sent_before)
             ).rowcount
 
-    def _send(self, query: Select[tuple[OutboxRow]]) -> int:
+    def _send(self, query: Select[tuple[DbOutboxEvent]]) -> int:
         sent = 0
         with Session(self._engine) as session, session.begin():
             for row in session.scalars(query).all():
@@ -250,11 +252,11 @@ class OutboxRelay:
         return sent
 
 
-def _pending() -> Select[tuple[OutboxRow]]:
+def _pending() -> Select[tuple[DbOutboxEvent]]:
     # Locked rows belong to another relay or sweep, which will send them
     return (
-        select(OutboxRow)
-        .where(OutboxRow.sent_at.is_(None))
+        select(DbOutboxEvent)
+        .where(DbOutboxEvent.sent_at.is_(None))
         .with_for_update(skip_locked=True)
     )
 ```
@@ -349,7 +351,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db.unit_of_work import UnitOfWork
 from app.core.events.messages import decode, from_payload, get_event_name
-from app.core.events.models import ProcessedEventRow
+from app.core.events.models import DbProcessedEvent
 from app.core.outbox.relay import OutboxRelay
 from app.shared.events.base import DomainEvent
 
@@ -396,9 +398,9 @@ class EventConsumer:
 
     def purge(self, processed_before: datetime) -> int:
         with Session(self._engine) as session, session.begin():
-            query = delete(ProcessedEventRow).where(
-                ProcessedEventRow.consumer == self.name,
-                ProcessedEventRow.processed_at < processed_before,
+            query = delete(DbProcessedEvent).where(
+                DbProcessedEvent.consumer == self.name,
+                DbProcessedEvent.processed_at < processed_before,
             )
             return session.execute(query).rowcount
 
@@ -417,13 +419,13 @@ class EventConsumer:
         with UnitOfWork(self._engine, self._relay) as unit_of_work:
             if (
                 unit_of_work.session.get(
-                    ProcessedEventRow, (event.event_id, self.name)
+                    DbProcessedEvent, (event.event_id, self.name)
                 )
                 is not None
             ):
                 return
             unit_of_work.session.add(
-                ProcessedEventRow(
+                DbProcessedEvent(
                     event_id=event.event_id,
                     consumer=self.name,
                     processed_at=datetime.now(UTC),

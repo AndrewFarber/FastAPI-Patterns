@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.db.base import Base
 
 
-class ProcessedEventRow(Base):
+class DbProcessedEvent(Base):
     __tablename__ = "processed_events"
     __table_args__ = {"schema": "events"}
 

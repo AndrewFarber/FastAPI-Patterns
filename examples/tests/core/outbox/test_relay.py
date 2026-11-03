@@ -6,13 +6,13 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.core.db.unit_of_work import UnitOfWork
-from app.core.outbox.models import OutboxRow
+from app.core.outbox.models import DbOutboxEvent
 from app.services.users import UserDeactivated
 
 
-def get_outbox_rows(engine) -> list[OutboxRow]:
+def get_outbox_rows(engine) -> list[DbOutboxEvent]:
     with Session(engine) as session:
-        return list(session.scalars(select(OutboxRow)))
+        return list(session.scalars(select(DbOutboxEvent)))
 
 
 def test_event_is_stored_with_the_change_and_sent_after_commit(
