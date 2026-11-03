@@ -6,12 +6,12 @@ from app.services.users.domain.errors import UserChangedError
 from app.services.users.infrastructure.models import DbUser
 
 
-def to_entity(row: DbUser) -> User:
+def to_entity(db_user: DbUser) -> User:
     return User(
-        id=row.id,
-        name=row.name,
-        status=UserStatus(row.status),
-        version=row.version,
+        id=db_user.id,
+        name=db_user.name,
+        status=UserStatus(db_user.status),
+        version=db_user.version,
     )
 
 
@@ -20,8 +20,8 @@ class SqlUserRepository:
         self._session = session
 
     def get(self, user_id: int) -> User | None:
-        row = self._session.get(DbUser, user_id)
-        return None if row is None else to_entity(row)
+        db_user = self._session.get(DbUser, user_id)
+        return None if db_user is None else to_entity(db_user)
 
     def get_for_share(self, user_id: int) -> User | None:
         # FOR SHARE: the user can't change until this transaction ends
@@ -30,16 +30,16 @@ class SqlUserRepository:
             .where(DbUser.id == user_id)
             .with_for_update(read=True)
         )
-        row = self._session.scalars(
+        db_user = self._session.scalars(
             query.execution_options(populate_existing=True)
         ).one_or_none()
-        return None if row is None else to_entity(row)
+        return None if db_user is None else to_entity(db_user)
 
     def add(self, user: User) -> User:
-        row = DbUser(name=user.name, status=user.status)
-        self._session.add(row)
+        db_user = DbUser(name=user.name, status=user.status)
+        self._session.add(db_user)
         self._session.flush()
-        user.id, user.version = row.id, row.version
+        user.id, user.version = db_user.id, db_user.version
         return user
 
     def save(self, user: User) -> None:

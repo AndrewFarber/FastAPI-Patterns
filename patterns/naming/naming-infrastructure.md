@@ -19,7 +19,8 @@ Names in a service's `infrastructure/` and in the database, building on [[naming
 - **Tables are the plural of what one row is,** in the owning service's schema ([[layout]]): `orders.orders`, `users.users`, `events.processed_events`. A plural avoids reserved words like `user` and `order`, which singular tables would have to quote in every hand-written query. A well-known pattern name stays as it is: `events.outbox`.
 - **Columns are `snake_case` nouns;** foreign keys are `<entity>_id` (`user_id`), timestamps are `<past_verb>_at` (`created_at`, `sent_at`).
 - **Constraint names come from a naming convention** on `Base.metadata`, so every index, key, and check has a deterministic name across databases and migrations. Name a constraint by hand only when the convention can't express it, like a partial index: `ix_outbox_pending`.
-- **Map rows to entities with `to_entity(row)`,** a module function next to the repository that uses it. Writes list their columns where they write: `add` builds a new `DbOrder`, `save` issues a versioned `UPDATE`, and neither needs a reverse mapper.
+- **A local DB object is `db_<entity>`:** `db_order`, `db_outbox_event`, never `row`, so it reads apart from the entity next to it (`order`).
+- **Map DB objects to entities with `to_entity(db_order)`,** a module function next to the repository that uses it. Writes list their columns where they write: `add` builds a new `DbOrder`, `save` issues a versioned `UPDATE`, and neither needs a reverse mapper.
 - **Implementations put their technology first** ([[naming-domain]]): `SqlOrderRepository`, `SsmOrderSwitches`.
 
 ## Code example

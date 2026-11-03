@@ -6,13 +6,13 @@ from app.services.orders.domain.errors import OrderChangedError
 from app.services.orders.infrastructure.models import DbOrder
 
 
-def to_entity(row: DbOrder) -> Order:
+def to_entity(db_order: DbOrder) -> Order:
     return Order(
-        id=row.id,
-        user_id=row.user_id,
-        item=row.item,
-        status=OrderStatus(row.status),
-        version=row.version,
+        id=db_order.id,
+        user_id=db_order.user_id,
+        item=db_order.item,
+        status=OrderStatus(db_order.status),
+        version=db_order.version,
     )
 
 
@@ -21,12 +21,12 @@ class SqlOrderRepository:
         self._session = session
 
     def add(self, order: Order) -> Order:
-        row = DbOrder(
+        db_order = DbOrder(
             user_id=order.user_id, item=order.item, status=order.status
         )
-        self._session.add(row)
+        self._session.add(db_order)
         self._session.flush()
-        order.id, order.version = row.id, row.version
+        order.id, order.version = db_order.id, db_order.version
         return order
 
     def list_for_user(
@@ -35,8 +35,8 @@ class SqlOrderRepository:
         query = select(DbOrder).where(DbOrder.user_id == user_id)
         if status is not None:
             query = query.where(DbOrder.status == status)
-        rows = self._session.scalars(query)
-        return [to_entity(row) for row in rows]
+        db_orders = self._session.scalars(query)
+        return [to_entity(db_order) for db_order in db_orders]
 
     def save(self, order: Order) -> None:
         result = self._session.execute(

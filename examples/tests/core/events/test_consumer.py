@@ -66,8 +66,8 @@ def test_handlers_publish_through_their_own_outbox(
     consumer.handle({"Records": [create_record(UserDeactivated(user_id=1))]})
     with Session(engine) as session:
         assert [
-            row.payload["user_id"]
-            for row in session.scalars(select(DbOutboxEvent))
+            db_outbox_event.payload["user_id"]
+            for db_outbox_event in session.scalars(select(DbOutboxEvent))
         ] == [2]
     assert len(message_sender.sent) == 1
 
@@ -90,5 +90,6 @@ def test_purge_deletes_only_this_consumers_old_records(consumer, engine, relay):
     assert consumer.purge(datetime.now(UTC) + timedelta(seconds=1)) == 1
     with Session(engine) as session:
         assert [
-            row.consumer for row in session.scalars(select(DbProcessedEvent))
+            db_processed_event.consumer
+            for db_processed_event in session.scalars(select(DbProcessedEvent))
         ] == ["billing"]

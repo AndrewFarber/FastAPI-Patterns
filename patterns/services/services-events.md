@@ -236,18 +236,21 @@ class OutboxRelay:
     def _send(self, query: Select[tuple[DbOutboxEvent]]) -> int:
         sent = 0
         with Session(self._engine) as session, session.begin():
-            for row in session.scalars(query).all():
+            for db_outbox_event in session.scalars(query).all():
                 try:
                     self._message_sender.send(
-                        row.event_type, encode(row.event_type, row.payload)
+                        db_outbox_event.event_type,
+                        encode(
+                            db_outbox_event.event_type, db_outbox_event.payload
+                        ),
                     )
                 except Exception:
                     logger.exception(
                         "sending event %s failed; the next sweep retries it",
-                        row.event_id,
+                        db_outbox_event.event_id,
                     )
                     continue
-                row.sent_at = datetime.now(UTC)
+                db_outbox_event.sent_at = datetime.now(UTC)
                 sent += 1
         return sent
 
