@@ -13,7 +13,7 @@ related:
 ## Rules
 - **Never mutate or rebuild settings.** Startup objects (engine, middleware, mounted routers) would keep the old values, and a failed rebuild would fail every request; the cache is a client built at startup.
 - **No locks.** Sync routes share the cache across threadpool threads; each dict read and write is atomic, so threads never see a torn entry. At expiry, threads that read the key at the same moment each fetch it: a few extra calls once per TTL, each capped by the client timeouts.
-- **Last good value on errors,** with one warning and a `retry_seconds` backoff; raise only when there has never been a value.
+- **Last good value on errors,** with one warning and a `retry` backoff; raise only when there has never been a value.
 - **`invalidate()` keeps the fallback** and forces the next read to fetch, for a caller that knows the value is stale.
 - **Read each value once at startup.** The first `get()` raises when there is no value yet; reading it in the lifespan turns a missing parameter or permission into a failed deploy, and from then on there is always a last good value to serve.
 - **Keep live values outside `AWS_SSM_PATH`.** The settings source ([[settings-aws-sources]]) loads every parameter under that path into `Settings`, where `extra="forbid"` rejects one it doesn't know: `/shop/switches/orders-paused`, not `/shop/prd/switches/...`.
@@ -28,6 +28,7 @@ related:
 import logging
 import time
 from collections.abc import Callable
+from datetime import timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -36,12 +37,12 @@ class TtlCache:
     def __init__(
         self,
         fetch: Callable[[str], str],
-        ttl_seconds: float,
-        retry_seconds: float = 30,
+        ttl: timedelta,
+        retry: timedelta = timedelta(seconds=30),
     ) -> None:
         self._fetch = fetch
-        self._ttl = ttl_seconds
-        self._retry = min(retry_seconds, ttl_seconds)
+        self._ttl = ttl.total_seconds()
+        self._retry = min(retry, ttl).total_seconds()
         self._values: dict[str, tuple[float, str]] = {}
 
     def get(self, key: str) -> str:
@@ -70,6 +71,8 @@ class TtlCache:
 
 ```python
 # app/core/aws/values.py
+from datetime import timedelta
+
 import boto3
 from botocore.config import Config
 
@@ -82,7 +85,7 @@ CLIENT_CONFIG = Config(
 )
 
 
-def secrets_manager_cache(region: str, ttl_seconds: float) -> TtlCache:
+def create_secrets_manager_cache(region: str, ttl: timedelta) -> TtlCache:
     client = boto3.client(
         "secretsmanager", region_name=region, config=CLIENT_CONFIG
     )
@@ -90,17 +93,17 @@ def secrets_manager_cache(region: str, ttl_seconds: float) -> TtlCache:
         lambda secret_id: client.get_secret_value(SecretId=secret_id)[
             "SecretString"
         ],
-        ttl_seconds,
+        ttl,
     )
 
 
-def parameter_store_cache(region: str, ttl_seconds: float) -> TtlCache:
+def create_parameter_store_cache(region: str, ttl: timedelta) -> TtlCache:
     client = boto3.client("ssm", region_name=region, config=CLIENT_CONFIG)
     return TtlCache(
         lambda name: client.get_parameter(Name=name, WithDecryption=True)[
             "Parameter"
         ]["Value"],
-        ttl_seconds,
+        ttl,
     )
 ```
 
@@ -111,7 +114,7 @@ An entry point builds the cache once at startup, from a sub-model that names the
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class SwitchSettings(BaseModel):
+class SwitchesSettings(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     region: str
@@ -123,8 +126,9 @@ The lifespan builds the cache and reads the switch once, so a missing parameter 
 
 ```python
 # app/main.py (fragment)
-    app.state.parameters = parameter_store_cache(
-        settings.switches.region, settings.switches.ttl_seconds
+    app.state.parameters = create_parameter_store_cache(
+        settings.switches.region,
+        timedelta(seconds=settings.switches.ttl_seconds),
     )
     # A missing parameter fails startup, not every order
     app.state.parameters.get(settings.switches.orders_paused)
@@ -137,13 +141,13 @@ Orders states what it needs as a `Protocol`, `OrderSwitches` ([[services-calls]]
 from app.core.cache.ttl_cache import TtlCache
 
 
-class ParameterOrderSwitches:
+class SsmOrderSwitches:
     def __init__(self, parameters: TtlCache, paused_parameter: str) -> None:
         self._parameters = parameters
         self._paused_parameter = paused_parameter
 
-    def ordering_paused(self) -> bool:
+    def is_ordering_paused(self) -> bool:
         return self._parameters.get(self._paused_parameter) == "true"
 ```
 
-`place_order` raises `OrderingPaused` (409) while the parameter is `true`. Its tests pass a fake `OrderSwitches`; the API test sets the parameter in `moto` and calls `invalidate()` so the next read sees it.
+`place_order` raises `OrderingPausedError` (409) while the parameter is `true`. Its tests pass a fake `OrderSwitches`; the API test sets the parameter in `moto` and calls `invalidate()` so the next read sees it.

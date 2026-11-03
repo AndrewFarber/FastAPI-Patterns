@@ -5,9 +5,11 @@ from app.services.users.domain.protocols import UserRepository
 
 
 @dataclass(frozen=True)
-class RegisterUser:
+class RegisterUserCommand:
     name: str
 
 
-def register_user(command: RegisterUser, users: UserRepository) -> User:
-    return users.add(User(name=command.name))
+def register_user(
+    command: RegisterUserCommand, user_repository: UserRepository
+) -> User:
+    return user_repository.add(User(name=command.name))

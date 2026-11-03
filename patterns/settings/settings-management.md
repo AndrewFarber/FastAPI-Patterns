@@ -19,7 +19,7 @@ related:
 All configuration goes through one typed, frozen `Settings` object, composed from one sub-model per concern and validated at startup. A missing or malformed value fails the app before it serves traffic, not when the code path that reads it first runs.
 
 ## Rules
-- **One concern per file**, its sub-model named `<Concern>Settings`. Variants of a concern get their own files (`db.py` imports `db_iam.py`).
+- **One concern per file**, its sub-model named after its field on the root plus `Settings` (`events` → `EventsSettings`, `switches` → `SwitchesSettings`). Variants of a concern get their own files (`db.py` imports `db_iam.py`).
 - **Only the root is a `BaseSettings`.** Sub-models are plain `BaseModel`; only the root reads the environment.
 - **`settings.py` only composes:** the sub-models, the cross-concern rules, and the sources. App-wide values live in `app.py` like any other concern.
 - **Concerns don't import each other.** Cross-concern rules ("no debug in prod", "no password DB auth in prod") are a `model_validator` on the root; rules within a concern go on its sub-model.
@@ -39,7 +39,8 @@ config/
 ├── db_iam.py       IamAuth            [[settings-db-iam-auth]]
 ├── cors.py         CorsSettings       [[settings-cors]]
 ├── events.py       EventsSettings     [[services-events]]
-├── features.py     FeatureSettings    [[settings-feature-flags]]
+├── features.py     FeaturesSettings   [[settings-feature-flags]]
+├── switches.py     SwitchesSettings   [[settings-refreshing-values]]
 └── log.py          LogSettings
 ```
 
@@ -79,9 +80,9 @@ from app.core.config.app import AppSettings
 from app.core.config.cors import CorsSettings
 from app.core.config.db import DbSettings, PasswordAuth
 from app.core.config.events import EventsSettings
-from app.core.config.features import FeatureSettings
+from app.core.config.features import FeaturesSettings
 from app.core.config.log import LogSettings
-from app.core.config.switches import SwitchSettings
+from app.core.config.switches import SwitchesSettings
 
 
 class Settings(BaseSettings):
@@ -93,12 +94,12 @@ class Settings(BaseSettings):
 
     db: DbSettings
     events: EventsSettings
-    switches: SwitchSettings
+    switches: SwitchesSettings
 
     app: AppSettings = Field(default_factory=AppSettings)
     cors: CorsSettings = Field(default_factory=CorsSettings)
     log: LogSettings = Field(default_factory=LogSettings)
-    features: FeatureSettings = Field(default_factory=FeatureSettings)
+    features: FeaturesSettings = Field(default_factory=FeaturesSettings)
 
     @model_validator(mode="after")
     def check_prod_safety(self) -> Self:

@@ -7,8 +7,8 @@ from app.services.users.domain.protocols import UserRepository
 from app.services.users.infrastructure.repositories import SqlUserRepository
 
 
-def get_user_repository(uow: UnitOfWorkDep) -> UserRepository:
-    return SqlUserRepository(uow.session)
+def get_user_repository(unit_of_work: UnitOfWorkDep) -> UserRepository:
+    return SqlUserRepository(unit_of_work.session)
 
 
 UserRepositoryDep = Annotated[UserRepository, Depends(get_user_repository)]

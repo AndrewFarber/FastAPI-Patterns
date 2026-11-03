@@ -3,9 +3,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.core.config.settings import get_settings
-from app.core.db.engine import build_engine
+from app.core.db.engine import create_engine
 from app.core.events.consumer import EventConsumer
-from app.core.messaging.sns import build_sns_sender
+from app.core.messaging.sns import create_sns_sender
 from app.core.observability.log import configure_logging
 from app.core.outbox.relay import OutboxRelay
 from app.services.orders import event_handlers as orders_handlers
@@ -24,10 +24,10 @@ def create_workers() -> Workers:
     # A Lambda instance handles one event at a time:
     # one connection, kept warm between invocations
     db = settings.db.model_copy(update={"pool_size": 1, "max_overflow": 0})
-    engine = build_engine(db, application_name=f"{settings.app.name}-workers")
+    engine = create_engine(db, application_name=f"{settings.app.name}-workers")
     relay = OutboxRelay(
         engine,
-        build_sns_sender(settings.events),
+        create_sns_sender(settings.events),
         settings.events.sweep_batch_size,
     )
     orders = EventConsumer("orders", engine, relay)

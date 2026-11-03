@@ -20,7 +20,7 @@ One service announces a fact, and other services react to it later in their own 
 - **The sweeper catches what the relay missed:** a crash between commit and send, or SNS being down. Alarm on the age of the oldest pending row.
 - **Each row is locked while it's sent:** the relay and the sweeper both select pending rows `FOR UPDATE SKIP LOCKED`, so they never send the same row; a row another one holds is left for it.
 - **One bad row doesn't block the rest:** each row is sent on its own; a row that fails stays pending and the next sweep retries it, while the rows after it go out. A row that never sends shows up in the oldest-pending alarm.
-- **At least once:** a crash or failed commit after a send, and SNS and SQS themselves, can deliver twice. The consumer records `(event_id, consumer)` in `events.processed` in the handler's transaction and skips repeats.
+- **At least once:** a crash or failed commit after a send, and SNS and SQS themselves, can deliver twice. The consumer records `(event_id, consumer)` in `events.processed_events` in the handler's transaction and skips repeats.
 - **No ordering:** standard topics and queues reorder messages; a handler that needs order checks the state it changes, not the order of events.
 - **One queue per subscribing service,** with its own DLQ, so a failing service retries without delaying the others. Its filter policy lists `consumer.event_names`.
 - **Handlers run in their own unit of work:** a failing handler doesn't undo the publisher's work, and an event a handler publishes goes through the outbox like any other.
@@ -74,9 +74,9 @@ class UserDeactivated(DomainEvent):
 ```python
 # app/services/users/__init__.py
 from app.services.users.domain.events import UserDeactivated
-from app.services.users.public import UsersApi
+from app.services.users.public import UsersService
 
-__all__ = ["UserDeactivated", "UsersApi"]
+__all__ = ["UserDeactivated", "UsersService"]
 ```
 
 The use case publishes after changing state, through the `EventPublisher` it is given:
@@ -85,29 +85,31 @@ The use case publishes after changing state, through the `EventPublisher` it is 
 # app/services/users/use_cases/deactivate_user.py
 from dataclasses import dataclass
 
-from app.services.users.domain.errors import UserNotFound
+from app.services.users.domain.errors import UserNotFoundError
 from app.services.users.domain.events import UserDeactivated
 from app.services.users.domain.protocols import UserRepository
 from app.shared.events.base import EventPublisher
 
 
 @dataclass(frozen=True)
-class DeactivateUser:
+class DeactivateUserCommand:
     user_id: int
 
 
 def deactivate_user(
-    command: DeactivateUser, users: UserRepository, events: EventPublisher
+    command: DeactivateUserCommand,
+    user_repository: UserRepository,
+    event_publisher: EventPublisher,
 ) -> None:
-    user = users.get(command.user_id)
+    user = user_repository.get(command.user_id)
     if user is None:
-        raise UserNotFound(command.user_id)
+        raise UserNotFoundError(command.user_id)
     user.deactivate()
-    users.save(user)
-    events.publish(UserDeactivated(user_id=command.user_id))
+    user_repository.save(user)
+    event_publisher.publish(UserDeactivated(user_id=command.user_id))
 ```
 
-The unit of work gives use cases an `OutboxPublisher` bound to its session, so the event row commits or rolls back with the change. After commit it hands the new event IDs to the relay:
+The unit of work gives use cases an `OutboxEventPublisher` bound to its session, so the event row commits or rolls back with the change. After commit it hands the new event IDs to the relay:
 
 ```python
 # app/core/db/unit_of_work.py
@@ -117,7 +119,7 @@ from typing import Self
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
-from app.core.outbox.publisher import OutboxPublisher
+from app.core.outbox.publisher import OutboxEventPublisher
 from app.core.outbox.relay import OutboxRelay
 
 
@@ -128,7 +130,7 @@ class UnitOfWork:
 
     def __enter__(self) -> Self:
         self.session = Session(self._engine)
-        self.events = OutboxPublisher(self.session)
+        self.event_publisher = OutboxEventPublisher(self.session)
         return self
 
     def __exit__(
@@ -142,7 +144,7 @@ class UnitOfWork:
                 self.session.rollback()
                 return
             self.session.commit()
-        self._relay.relay(self.events.event_ids)
+        self._relay.relay(self.event_publisher.event_ids)
 ```
 
 ```python
@@ -152,12 +154,12 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.core.events.messages import event_name, to_payload
+from app.core.events.messages import get_event_name, to_payload
 from app.core.outbox.models import OutboxRow
 from app.shared.events.base import DomainEvent
 
 
-class OutboxPublisher:
+class OutboxEventPublisher:
     def __init__(self, session: Session) -> None:
         self._session = session
         self.event_ids: list[UUID] = []
@@ -166,7 +168,7 @@ class OutboxPublisher:
         self._session.add(
             OutboxRow(
                 event_id=event.event_id,
-                event_type=event_name(type(event)),
+                event_type=get_event_name(type(event)),
                 payload=to_payload(event),
                 created_at=datetime.now(UTC),
             )
@@ -198,10 +200,13 @@ class MessageSender(Protocol):
 
 class OutboxRelay:
     def __init__(
-        self, engine: Engine, sender: MessageSender, batch_size: int = 100
+        self,
+        engine: Engine,
+        message_sender: MessageSender,
+        batch_size: int = 100,
     ) -> None:
         self._engine = engine
-        self._sender = sender
+        self._message_sender = message_sender
         self._batch_size = batch_size
 
     def relay(self, event_ids: list[UUID]) -> None:
@@ -231,7 +236,7 @@ class OutboxRelay:
         with Session(self._engine) as session, session.begin():
             for row in session.scalars(query).all():
                 try:
-                    self._sender.send(
+                    self._message_sender.send(
                         row.event_type, encode(row.event_type, row.payload)
                     )
                 except Exception:
@@ -264,7 +269,7 @@ from app.core.aws.values import CLIENT_CONFIG
 from app.core.config.events import EventsSettings
 
 
-class SnsSender:
+class SnsMessageSender:
     def __init__(self, topic_arn: str, client: Any) -> None:
         self._topic_arn = topic_arn
         self._client = client
@@ -279,8 +284,8 @@ class SnsSender:
         )
 
 
-def build_sns_sender(events: EventsSettings) -> SnsSender:
-    return SnsSender(
+def create_sns_sender(events: EventsSettings) -> SnsMessageSender:
+    return SnsMessageSender(
         events.topic_arn,
         boto3.client("sns", region_name=events.region, config=CLIENT_CONFIG),
     )
@@ -318,8 +323,10 @@ from app.core.db.unit_of_work import UnitOfWork
 
 
 def get_unit_of_work(request: Request) -> Iterator[UnitOfWork]:
-    with UnitOfWork(request.app.state.engine, request.app.state.relay) as uow:
-        yield uow
+    with UnitOfWork(
+        request.app.state.engine, request.app.state.relay
+    ) as unit_of_work:
+        yield unit_of_work
 
 
 UnitOfWorkDep = Annotated[
@@ -341,7 +348,7 @@ from sqlalchemy import Engine, delete
 from sqlalchemy.orm import Session
 
 from app.core.db.unit_of_work import UnitOfWork
-from app.core.events.messages import decode, event_name, from_payload
+from app.core.events.messages import decode, from_payload, get_event_name
 from app.core.events.models import ProcessedEventRow
 from app.core.outbox.relay import OutboxRelay
 from app.shared.events.base import DomainEvent
@@ -368,7 +375,7 @@ class EventConsumer:
     def subscribe[E: DomainEvent](
         self, event_type: type[E], handler: Handler[E]
     ) -> None:
-        self._types[event_name(event_type)] = event_type
+        self._types[get_event_name(event_type)] = event_type
         self._handlers[event_type].append(handler)
 
     def handle(
@@ -407,13 +414,15 @@ class EventConsumer:
             )
             return
         event = from_payload(event_type, payload)
-        with UnitOfWork(self._engine, self._relay) as uow:
+        with UnitOfWork(self._engine, self._relay) as unit_of_work:
             if (
-                uow.session.get(ProcessedEventRow, (event.event_id, self.name))
+                unit_of_work.session.get(
+                    ProcessedEventRow, (event.event_id, self.name)
+                )
                 is not None
             ):
                 return
-            uow.session.add(
+            unit_of_work.session.add(
                 ProcessedEventRow(
                     event_id=event.event_id,
                     consumer=self.name,
@@ -421,7 +430,7 @@ class EventConsumer:
                 )
             )
             for handler in self._handlers[event_type]:
-                handler(event, uow)
+                handler(event, unit_of_work)
 ```
 
 The subscriber's `event_handlers/` is an entry point like `api/`: it builds the implementations from the unit of work and calls a use case of its own service:
@@ -432,14 +441,17 @@ from app.core.db.unit_of_work import UnitOfWork
 from app.services import users
 from app.services.orders.infrastructure.repositories import SqlOrderRepository
 from app.services.orders.use_cases.cancel_open_orders import (
-    CancelOpenOrders,
+    CancelOpenOrdersCommand,
     cancel_open_orders,
 )
 
 
-def on_user_deactivated(event: users.UserDeactivated, uow: UnitOfWork) -> None:
+def handle_user_deactivated(
+    event: users.UserDeactivated, unit_of_work: UnitOfWork
+) -> None:
     cancel_open_orders(
-        CancelOpenOrders(user_id=event.user_id), SqlOrderRepository(uow.session)
+        CancelOpenOrdersCommand(user_id=event.user_id),
+        SqlOrderRepository(unit_of_work.session),
     )
 ```
 
@@ -448,12 +460,12 @@ def on_user_deactivated(event: users.UserDeactivated, uow: UnitOfWork) -> None:
 from app.core.events.consumer import EventConsumer
 from app.services import users
 from app.services.orders.event_handlers.user_deactivated import (
-    on_user_deactivated,
+    handle_user_deactivated,
 )
 
 
 def register(consumer: EventConsumer) -> None:
-    consumer.subscribe(users.UserDeactivated, on_user_deactivated)
+    consumer.subscribe(users.UserDeactivated, handle_user_deactivated)
 ```
 
 `app/workers.py` is the process entry point for the Lambda functions, like `main.py` is for the API. It builds settings, the engine, the relay, and one consumer per subscribing service when the module is imported, so bad config fails the Lambda init:
@@ -465,9 +477,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.core.config.settings import get_settings
-from app.core.db.engine import build_engine
+from app.core.db.engine import create_engine
 from app.core.events.consumer import EventConsumer
-from app.core.messaging.sns import build_sns_sender
+from app.core.messaging.sns import create_sns_sender
 from app.core.observability.log import configure_logging
 from app.core.outbox.relay import OutboxRelay
 from app.services.orders import event_handlers as orders_handlers
@@ -486,10 +498,10 @@ def create_workers() -> Workers:
     # A Lambda instance handles one event at a time:
     # one connection, kept warm between invocations
     db = settings.db.model_copy(update={"pool_size": 1, "max_overflow": 0})
-    engine = build_engine(db, application_name=f"{settings.app.name}-workers")
+    engine = create_engine(db, application_name=f"{settings.app.name}-workers")
     relay = OutboxRelay(
         engine,
-        build_sns_sender(settings.events),
+        create_sns_sender(settings.events),
         settings.events.sweep_batch_size,
     )
     orders = EventConsumer("orders", engine, relay)

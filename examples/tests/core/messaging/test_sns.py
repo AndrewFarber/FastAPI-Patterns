@@ -17,7 +17,7 @@ def test_sns_sender_publishes_with_the_event_type_attribute(aws):
         TopicArn=aws, Protocol="sqs", Endpoint=queue_arn
     )
 
-    sns.build_sns_sender(EventsSettings(topic_arn=aws)).send(
+    sns.create_sns_sender(EventsSettings(topic_arn=aws)).send(
         "UserDeactivated", '{"x": 1}'
     )
 
@@ -35,7 +35,7 @@ def test_sns_client_has_short_timeouts(monkeypatch):
     monkeypatch.setattr(
         sns.boto3, "client", lambda *args, **kwargs: created.append(kwargs)
     )
-    sns.build_sns_sender(EventsSettings(**TEST_VALUES["events"]))
+    sns.create_sns_sender(EventsSettings(**TEST_VALUES["events"]))
     [kwargs] = created
     assert kwargs["region_name"] == "us-east-1"
     assert (

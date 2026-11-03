@@ -61,7 +61,7 @@ TEST_VALUES: dict[str, dict[str, Any]] = {
 }
 
 
-def make_test_env() -> dict[str, str]:
+def create_test_env() -> dict[str, str]:
     return {
         f"{section}__{key}".upper(): json.dumps(value)
         if isinstance(value, (list, dict))
@@ -87,7 +87,7 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def test_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    for key, value in make_test_env().items():
+    for key, value in create_test_env().items():
         monkeypatch.setenv(key, value)
     get_settings.cache_clear()
     yield
@@ -120,6 +120,13 @@ def aws_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
+def ca_bundle(tmp_path):
+    path = tmp_path / "ca.pem"
+    path.write_text("")
+    return path
+
+
+@pytest.fixture
 def engine() -> Iterator[Engine]:
     tables = [
         UserRow.__table__,
@@ -138,7 +145,7 @@ def engine() -> Iterator[Engine]:
     engine.dispose()
 
 
-class RecordingSender:
+class FakeMessageSender:
     def __init__(self) -> None:
         self.sent: list[tuple[str, str]] = []
 
@@ -147,13 +154,13 @@ class RecordingSender:
 
 
 @pytest.fixture
-def sender() -> RecordingSender:
-    return RecordingSender()
+def message_sender() -> FakeMessageSender:
+    return FakeMessageSender()
 
 
 @pytest.fixture
-def relay(engine, sender) -> OutboxRelay:
-    return OutboxRelay(engine, sender)
+def relay(engine, message_sender) -> OutboxRelay:
+    return OutboxRelay(engine, message_sender)
 
 
 @pytest.fixture
@@ -172,7 +179,7 @@ def workers(test_env, restore_logging, aws, engine, monkeypatch):
     from app import workers
 
     monkeypatch.setattr(
-        workers, "build_engine", lambda db, application_name: engine
+        workers, "create_engine", lambda db, application_name: engine
     )
     return workers.create_workers()
 
@@ -207,18 +214,18 @@ def deliver(
     result = consumer.handle(
         {
             "Records": [
-                {"messageId": m["MessageId"], "body": m["Body"]}
-                for m in messages
+                {"messageId": message["MessageId"], "body": message["Body"]}
+                for message in messages
             ]
         }
     )
     failed = {
         failure["itemIdentifier"] for failure in result["batchItemFailures"]
     }
-    for m in messages:
-        if m["MessageId"] not in failed:
+    for message in messages:
+        if message["MessageId"] not in failed:
             sqs.delete_message(
-                QueueUrl=queue_url, ReceiptHandle=m["ReceiptHandle"]
+                QueueUrl=queue_url, ReceiptHandle=message["ReceiptHandle"]
             )
     return result
 
@@ -228,14 +235,14 @@ def client(create_app, aws, engine, monkeypatch) -> Iterator[TestClient]:
     from app import main
 
     monkeypatch.setattr(
-        main, "build_engine", lambda db, application_name: engine
+        main, "create_engine", lambda db, application_name: engine
     )
     with TestClient(create_app()) as client:
         yield client
 ```
 
-- **`TEST_VALUES`** is the one source of test configuration; `make_test_env()` turns it into env vars.
+- **`TEST_VALUES`** is the one source of test configuration; `create_test_env()` turns it into env vars.
 - **`clean_env`** (autouse) removes every env var whose prefix is a top-level `Settings` field, plus the AWS source switches, so `APP__IS_PRD=true` in a shell can't change a test.
 - **`create_app`** imports `app.main` only after `test_env`, because importing it builds the module-level app. Tests needing other values `monkeypatch.setenv`, `get_settings.cache_clear()`, then call it.
 - **`aws`** starts `moto` and creates the SNS topic and the `orders_paused` parameter (`"false"`) from `TEST_VALUES`, so the lifespan finds it; **`workers`** builds the event consumers on the test engine, and `subscribe_queue()` / `deliver()` run the SQS hop ([[services-events]]).
-- **Sub-models test on their own:** `FeatureSettings(new_checkout=True)`, no root `Settings` needed. Code below the entry points takes sub-models ([[settings-access]]), so its tests never touch the environment.
+- **Sub-models test on their own:** `FeaturesSettings(new_checkout=True)`, no root `Settings` needed. Code below the entry points takes sub-models ([[settings-access]]), so its tests never touch the environment.

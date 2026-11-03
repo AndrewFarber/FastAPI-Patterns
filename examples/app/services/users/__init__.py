@@ -1,4 +1,4 @@
 from app.services.users.domain.events import UserDeactivated
-from app.services.users.public import UsersApi
+from app.services.users.public import UsersService
 
-__all__ = ["UserDeactivated", "UsersApi"]
+__all__ = ["UserDeactivated", "UsersService"]

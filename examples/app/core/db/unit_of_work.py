@@ -4,7 +4,7 @@ from typing import Self
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
-from app.core.outbox.publisher import OutboxPublisher
+from app.core.outbox.publisher import OutboxEventPublisher
 from app.core.outbox.relay import OutboxRelay
 
 
@@ -15,7 +15,7 @@ class UnitOfWork:
 
     def __enter__(self) -> Self:
         self.session = Session(self._engine)
-        self.events = OutboxPublisher(self.session)
+        self.event_publisher = OutboxEventPublisher(self.session)
         return self
 
     def __exit__(
@@ -29,4 +29,4 @@ class UnitOfWork:
                 self.session.rollback()
                 return
             self.session.commit()
-        self._relay.relay(self.events.event_ids)
+        self._relay.relay(self.event_publisher.event_ids)

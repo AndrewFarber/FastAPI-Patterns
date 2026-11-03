@@ -7,8 +7,10 @@ from app.core.db.unit_of_work import UnitOfWork
 
 
 def get_unit_of_work(request: Request) -> Iterator[UnitOfWork]:
-    with UnitOfWork(request.app.state.engine, request.app.state.relay) as uow:
-        yield uow
+    with UnitOfWork(
+        request.app.state.engine, request.app.state.relay
+    ) as unit_of_work:
+        yield unit_of_work
 
 
 UnitOfWorkDep = Annotated[

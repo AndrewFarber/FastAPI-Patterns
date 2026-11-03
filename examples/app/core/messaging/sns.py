@@ -6,7 +6,7 @@ from app.core.aws.values import CLIENT_CONFIG
 from app.core.config.events import EventsSettings
 
 
-class SnsSender:
+class SnsMessageSender:
     def __init__(self, topic_arn: str, client: Any) -> None:
         self._topic_arn = topic_arn
         self._client = client
@@ -21,8 +21,8 @@ class SnsSender:
         )
 
 
-def build_sns_sender(events: EventsSettings) -> SnsSender:
-    return SnsSender(
+def create_sns_sender(events: EventsSettings) -> SnsMessageSender:
+    return SnsMessageSender(
         events.topic_arn,
         boto3.client("sns", region_name=events.region, config=CLIENT_CONFIG),
     )

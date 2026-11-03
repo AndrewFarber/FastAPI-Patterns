@@ -1,4 +1,5 @@
 import time
+from datetime import timedelta
 
 import pytest
 
@@ -8,7 +9,8 @@ from app.core.cache.ttl_cache import TtlCache
 def test_ttl_cache_caches_and_expires():
     calls = []
     cache = TtlCache(
-        lambda key: calls.append(key) or f"v{len(calls)}", ttl_seconds=0.05
+        lambda key: calls.append(key) or f"v{len(calls)}",
+        ttl=timedelta(seconds=0.05),
     )
     assert cache.get("a") == "v1" and cache.get("a") == "v1"
     time.sleep(0.06)
@@ -23,7 +25,7 @@ def test_ttl_cache_serves_last_good_value():
             raise RuntimeError("AWS is down")
         return "good"
 
-    cache = TtlCache(fetch, ttl_seconds=0.01)
+    cache = TtlCache(fetch, ttl=timedelta(seconds=0.01))
     assert cache.get("a") == "good"
     state["fail"] = True
     time.sleep(0.02)
@@ -41,7 +43,9 @@ def test_ttl_cache_backs_off_after_a_failed_refresh():
             raise RuntimeError("AWS is down")
         return "good"
 
-    cache = TtlCache(fetch, ttl_seconds=0.01, retry_seconds=60)
+    cache = TtlCache(
+        fetch, ttl=timedelta(seconds=0.01), retry=timedelta(seconds=60)
+    )
     assert cache.get("a") == "good"
     time.sleep(0.02)
     assert [cache.get("a") for _ in range(10)] == ["good"] * 10
@@ -56,7 +60,7 @@ def test_ttl_cache_invalidate_keeps_the_fallback():
             raise RuntimeError("AWS is down")
         return "good"
 
-    cache = TtlCache(fetch, ttl_seconds=60)
+    cache = TtlCache(fetch, ttl=timedelta(seconds=60))
     assert cache.get("a") == "good"
     state["fail"] = True
     cache.invalidate("a")

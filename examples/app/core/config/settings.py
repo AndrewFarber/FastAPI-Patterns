@@ -15,9 +15,9 @@ from app.core.config.app import AppSettings
 from app.core.config.cors import CorsSettings
 from app.core.config.db import DbSettings, PasswordAuth
 from app.core.config.events import EventsSettings
-from app.core.config.features import FeatureSettings
+from app.core.config.features import FeaturesSettings
 from app.core.config.log import LogSettings
-from app.core.config.switches import SwitchSettings
+from app.core.config.switches import SwitchesSettings
 
 
 class Settings(BaseSettings):
@@ -29,12 +29,12 @@ class Settings(BaseSettings):
 
     db: DbSettings
     events: EventsSettings
-    switches: SwitchSettings
+    switches: SwitchesSettings
 
     app: AppSettings = Field(default_factory=AppSettings)
     cors: CorsSettings = Field(default_factory=CorsSettings)
     log: LogSettings = Field(default_factory=LogSettings)
-    features: FeatureSettings = Field(default_factory=FeatureSettings)
+    features: FeaturesSettings = Field(default_factory=FeaturesSettings)
 
     @model_validator(mode="after")
     def check_prod_safety(self) -> Self:

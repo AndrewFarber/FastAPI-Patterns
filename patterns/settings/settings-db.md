@@ -14,9 +14,9 @@ related:
 Store connection *parts*, not a URL, with authentication as a discriminated union of one model per method, and verified TLS by default. Deployed environments use IAM ([[settings-db-iam-auth]]); a static password, kept in a `SecretStr`, is for local development and tests only.
 
 ## Rules
-- **Parts, not a URL.** `build_engine()` joins them with SQLAlchemy's `URL.create()`, which escapes the password and masks it in `repr()`; `DbSettings` holds only values and their validation.
+- **Parts, not a URL.** `create_engine()` joins them with SQLAlchemy's `URL.create()`, which escapes the password and masks it in `repr()`; `DbSettings` holds only values and their validation.
 - **One auth model per method,** selected by `method`. `extra="forbid"` then rejects a password set alongside IAM.
-- **`password` locally, `iam` when deployed.** The root validator rejects `PasswordAuth` when `app.is_prd` ([[settings-management]]); IAM adds its token hook in `build_engine()` ([[settings-db-iam-auth]]).
+- **`password` locally, `iam` when deployed.** The root validator rejects `PasswordAuth` when `app.is_prd` ([[settings-management]]); IAM adds its token hook in `create_engine()` ([[settings-db-iam-auth]]).
 - **Secure by default:** `sslmode` defaults to `verify-full` and requires `sslrootcert`; local development opts out with `DB__SSLMODE=disable`.
 - **`sslrootcert` is a CA bundle file in the image** (`FilePath`, checked at startup), not `system`: `psycopg[binary]`'s bundled OpenSSL looks for the OS store at a path that doesn't exist. For Amazon RDS use the RDS global bundle. Trust roots, never intermediates.
 - **`host` is the real endpoint.** `verify-full` and IAM tokens check it; a DNS alias fails.
@@ -83,15 +83,16 @@ class DbSettings(BaseModel):
 
 ```python
 # app/core/db/engine.py
-from sqlalchemy import URL, Engine, create_engine
+import sqlalchemy as sa
+from sqlalchemy import URL, Engine
 
 from app.core.config.db import DbSettings, PasswordAuth
 from app.core.config.db_iam import IamAuth
 from app.core.db.iam_auth import add_iam_token
 
 
-def build_engine(db: DbSettings, application_name: str) -> Engine:
-    engine = create_engine(
+def create_engine(db: DbSettings, application_name: str) -> Engine:
+    engine = sa.create_engine(
         _url(db),
         pool_size=db.pool_size,
         max_overflow=db.max_overflow,
@@ -99,14 +100,16 @@ def build_engine(db: DbSettings, application_name: str) -> Engine:
         pool_recycle=db.pool_recycle_seconds,
         pool_pre_ping=True,
         echo=db.echo,
-        connect_args=connect_args(db, application_name),
+        connect_args=get_connect_args(db, application_name),
     )
     if isinstance(db.auth, IamAuth):
         add_iam_token(engine, db, db.auth)
     return engine
 
 
-def connect_args(db: DbSettings, application_name: str) -> dict[str, str | int]:
+def get_connect_args(
+    db: DbSettings, application_name: str
+) -> dict[str, str | int]:
     args: dict[str, str | int] = {
         "sslmode": db.sslmode,
         "connect_timeout": db.connect_timeout_seconds,

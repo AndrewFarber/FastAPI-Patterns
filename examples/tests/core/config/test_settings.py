@@ -1,4 +1,6 @@
 import json
+import os
+import subprocess
 
 import boto3
 import pytest
@@ -6,7 +8,61 @@ from moto import mock_aws
 from pydantic import ValidationError
 
 from app.core.config.db import PasswordAuth
-from app.core.config.settings import Settings
+from app.core.config.settings import Settings, get_settings
+from conftest import TEST_VALUES, clear_settings_env
+
+
+def test_settings_load_from_env_vars(test_env):
+    assert get_settings().db.name == "shop_test"
+
+
+def test_typo_fails_startup(test_env, monkeypatch):
+    monkeypatch.setenv("DB__POOL_SZIE", "50")
+    get_settings.cache_clear()
+    with pytest.raises(ValidationError, match="pool_szie"):
+        get_settings()
+
+
+def test_stale_field_is_rejected():
+    with pytest.raises(ValidationError, match="redis"):
+        Settings(**TEST_VALUES, redis={"url": "x"})
+
+
+def test_prod_rejects_debug_and_password_auth():
+    with pytest.raises(ValidationError, match="debug"):
+        Settings(**TEST_VALUES, app={"is_prd": True, "debug": True})
+    with pytest.raises(ValidationError, match="password DB auth"):
+        Settings(**TEST_VALUES, app={"is_prd": True})
+
+
+def test_dump_masks_secrets():
+    assert (
+        '"password":"**********"' in Settings(**TEST_VALUES).model_dump_json()
+    )
+
+
+def test_settings_are_frozen():
+    with pytest.raises(ValidationError):
+        Settings(**TEST_VALUES).app.name = "x"
+
+
+def test_shell_quoted_json_list_parses(test_env, monkeypatch):
+    value = subprocess.run(
+        ["bash", "-c", """V='["http://localhost:3000"]'; printf %s "$V" """],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    monkeypatch.setenv("CORS__ALLOW_ORIGINS", value)
+    get_settings.cache_clear()
+    assert get_settings().cors.allow_origins == ["http://localhost:3000"]
+
+
+def test_developer_env_is_cleared(monkeypatch):
+    monkeypatch.setenv("APP__IS_PRD", "true")
+    monkeypatch.setenv("db__host", "prod-db")
+    clear_settings_env(monkeypatch)
+    assert "APP__IS_PRD" not in os.environ and "db__host" not in os.environ
 
 
 def test_aws_sources_merge_secret_and_parameters(monkeypatch):

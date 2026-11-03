@@ -36,7 +36,7 @@ app/
 │   ├── messaging/
 │   ├── tasks/
 │   ├── scheduler/
-│   ├── exceptions/
+│   ├── errors/
 │   ├── dependencies/
 │   ├── middleware/
 │   ├── auth/
@@ -61,7 +61,7 @@ app/
 | `messaging/`     | Message broker clients: the SNS sender.                                |
 | `tasks/`         | Background jobs run on demand.                                         |
 | `scheduler/`     | Registering and running periodic jobs.                                 |
-| `exceptions/`    | Mapping domain errors to HTTP responses.                               |
+| `errors/`        | Mapping domain errors to HTTP responses.                               |
 | `dependencies/`  | Shared `Depends()` providers: session, unit of work, caller.           |
 | `middleware/`    | Request IDs, timing, request logging.                                  |
 | `auth/`          | Authenticating callers and checking permissions.                       |

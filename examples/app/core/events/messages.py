@@ -6,7 +6,7 @@ from pydantic import TypeAdapter
 from app.shared.events.base import DomainEvent
 
 
-def event_name(event_type: type[DomainEvent]) -> str:
+def get_event_name(event_type: type[DomainEvent]) -> str:
     return event_type.__name__
 
 

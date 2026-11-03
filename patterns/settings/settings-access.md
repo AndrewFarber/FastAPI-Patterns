@@ -42,16 +42,17 @@ SettingsDep = Annotated[Settings, Depends(get_settings)]
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import timedelta
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.aws.values import parameter_store_cache
+from app.core.aws.values import create_parameter_store_cache
 from app.core.config.settings import get_settings
-from app.core.db.engine import build_engine
+from app.core.db.engine import create_engine
 from app.core.dependencies.settings import SettingsDep
-from app.core.exceptions import handlers as error_handlers
-from app.core.messaging.sns import build_sns_sender
+from app.core.errors import handlers as error_handlers
+from app.core.messaging.sns import create_sns_sender
 from app.core.observability.log import configure_logging
 from app.core.outbox.relay import OutboxRelay
 from app.services.orders.api.router import router as orders_router
@@ -63,16 +64,17 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     settings = get_settings()
-    app.state.engine = build_engine(
+    app.state.engine = create_engine(
         settings.db, application_name=settings.app.name
     )
     app.state.relay = OutboxRelay(
         app.state.engine,
-        build_sns_sender(settings.events),
+        create_sns_sender(settings.events),
         settings.events.sweep_batch_size,
     )
-    app.state.parameters = parameter_store_cache(
-        settings.switches.region, settings.switches.ttl_seconds
+    app.state.parameters = create_parameter_store_cache(
+        settings.switches.region,
+        timedelta(seconds=settings.switches.ttl_seconds),
     )
     # A missing parameter fails startup, not every order
     app.state.parameters.get(settings.switches.orders_paused)
@@ -110,4 +112,4 @@ def create_app() -> FastAPI:
 app = create_app()
 ```
 
-Entry points read settings: routes through `SettingsDep`, and `create_app()`, the lifespan, and other process entry points (`workers.py`, scripts) by calling `get_settings()`. They pass sub-models down: a use case that needs flags takes `FeatureSettings` ([[settings-feature-flags]]), `build_engine()` takes `DbSettings`. Tests set env vars and call `get_settings.cache_clear()` ([[settings-testing]]).
+Entry points read settings: routes through `SettingsDep`, and `create_app()`, the lifespan, and other process entry points (`workers.py`, scripts) by calling `get_settings()`. They pass sub-models down: a use case that needs flags takes `FeaturesSettings` ([[settings-feature-flags]]), `create_engine()` takes `DbSettings`. Tests set env vars and call `get_settings.cache_clear()` ([[settings-testing]]).

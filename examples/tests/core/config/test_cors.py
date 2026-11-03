@@ -23,3 +23,8 @@ def test_cors_accepts_origins(origin):
 def test_cors_rejects_non_origins(origin):
     with pytest.raises(ValidationError, match="not an origin"):
         CorsSettings(allow_origins=[origin])
+
+
+def test_cors_rejects_credentials_with_a_wildcard_origin():
+    with pytest.raises(ValidationError, match="wildcard"):
+        CorsSettings(allow_origins=["*"], allow_credentials=True)

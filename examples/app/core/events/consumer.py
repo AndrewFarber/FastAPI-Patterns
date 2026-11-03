@@ -8,7 +8,7 @@ from sqlalchemy import Engine, delete
 from sqlalchemy.orm import Session
 
 from app.core.db.unit_of_work import UnitOfWork
-from app.core.events.messages import decode, event_name, from_payload
+from app.core.events.messages import decode, from_payload, get_event_name
 from app.core.events.models import ProcessedEventRow
 from app.core.outbox.relay import OutboxRelay
 from app.shared.events.base import DomainEvent
@@ -35,7 +35,7 @@ class EventConsumer:
     def subscribe[E: DomainEvent](
         self, event_type: type[E], handler: Handler[E]
     ) -> None:
-        self._types[event_name(event_type)] = event_type
+        self._types[get_event_name(event_type)] = event_type
         self._handlers[event_type].append(handler)
 
     def handle(
@@ -74,13 +74,15 @@ class EventConsumer:
             )
             return
         event = from_payload(event_type, payload)
-        with UnitOfWork(self._engine, self._relay) as uow:
+        with UnitOfWork(self._engine, self._relay) as unit_of_work:
             if (
-                uow.session.get(ProcessedEventRow, (event.event_id, self.name))
+                unit_of_work.session.get(
+                    ProcessedEventRow, (event.event_id, self.name)
+                )
                 is not None
             ):
                 return
-            uow.session.add(
+            unit_of_work.session.add(
                 ProcessedEventRow(
                     event_id=event.event_id,
                     consumer=self.name,
@@ -88,4 +90,4 @@ class EventConsumer:
                 )
             )
             for handler in self._handlers[event_type]:
-                handler(event, uow)
+                handler(event, unit_of_work)

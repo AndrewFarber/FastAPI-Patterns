@@ -7,13 +7,16 @@ from app.services.users.infrastructure.repositories import SqlUserRepository
 
 def test_is_active_applies_the_users_rule(engine):
     with Session(engine) as session:
-        repo = SqlUserRepository(session)
-        ann, bob = repo.add(User(name="ann")), repo.add(User(name="bob"))
+        user_repository = SqlUserRepository(session)
+        ann, bob = (
+            user_repository.add(User(name="ann")),
+            user_repository.add(User(name="bob")),
+        )
         bob.deactivate()
-        repo.save(bob)
-        api = users.UsersApi(session)
+        user_repository.save(bob)
+        users_service = users.UsersService(session)
         assert (
-            api.is_active(ann.id)
-            and not api.is_active(bob.id)
-            and not api.is_active(999)
+            users_service.is_active(ann.id)
+            and not users_service.is_active(bob.id)
+            and not users_service.is_active(999)
         )

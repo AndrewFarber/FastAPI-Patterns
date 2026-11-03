@@ -1,7 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class SwitchSettings(BaseModel):
+class SwitchesSettings(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     region: str

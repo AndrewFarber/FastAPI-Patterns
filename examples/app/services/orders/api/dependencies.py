@@ -11,21 +11,21 @@ from app.services.orders.domain.protocols import (
     UserDirectory,
 )
 from app.services.orders.infrastructure.repositories import SqlOrderRepository
-from app.services.orders.infrastructure.switches import ParameterOrderSwitches
+from app.services.orders.infrastructure.switches import SsmOrderSwitches
 
 
-def get_order_repository(uow: UnitOfWorkDep) -> OrderRepository:
-    return SqlOrderRepository(uow.session)
+def get_order_repository(unit_of_work: UnitOfWorkDep) -> OrderRepository:
+    return SqlOrderRepository(unit_of_work.session)
 
 
-def get_user_directory(uow: UnitOfWorkDep) -> UserDirectory:
-    return users.UsersApi(uow.session)
+def get_user_directory(unit_of_work: UnitOfWorkDep) -> UserDirectory:
+    return users.UsersService(unit_of_work.session)
 
 
 def get_order_switches(
     request: Request, settings: SettingsDep
 ) -> OrderSwitches:
-    return ParameterOrderSwitches(
+    return SsmOrderSwitches(
         request.app.state.parameters, settings.switches.orders_paused
     )
 

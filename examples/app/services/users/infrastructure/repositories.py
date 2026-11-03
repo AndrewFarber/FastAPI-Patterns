@@ -2,7 +2,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.services.users.domain.entities import User, UserStatus
-from app.services.users.domain.errors import UserChanged
+from app.services.users.domain.errors import UserChangedError
 from app.services.users.infrastructure.models import UserRow
 
 
@@ -51,5 +51,5 @@ class SqlUserRepository:
             )
         )
         if result.rowcount != 1:
-            raise UserChanged(user.id)
+            raise UserChangedError(user.id)
         user.version += 1

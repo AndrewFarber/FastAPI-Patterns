@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 
 
-class OrderIn(BaseModel):
+class OrderCreate(BaseModel):
     user_id: int
     item: str = Field(min_length=1, max_length=200)
 

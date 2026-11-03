@@ -1,7 +1,7 @@
 from pydantic import BaseModel, ConfigDict
 
 
-class FeatureSettings(BaseModel):
+class FeaturesSettings(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     new_checkout: bool = False

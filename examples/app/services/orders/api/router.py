@@ -5,24 +5,28 @@ from app.services.orders.api.dependencies import (
     OrderSwitchesDep,
     UserDirectoryDep,
 )
-from app.services.orders.api.schemas import OrderIn, OrderOut
-from app.services.orders.use_cases.place_order import PlaceOrder, place_order
+from app.services.orders.api.schemas import OrderCreate, OrderOut
+from app.services.orders.domain.entities import OrderStatus
+from app.services.orders.use_cases.place_order import (
+    PlaceOrderCommand,
+    place_order,
+)
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
 
 @router.post("", status_code=201)
 def post_order(
-    body: OrderIn,
-    orders: OrderRepositoryDep,
-    users: UserDirectoryDep,
-    switches: OrderSwitchesDep,
+    body: OrderCreate,
+    order_repository: OrderRepositoryDep,
+    user_directory: UserDirectoryDep,
+    order_switches: OrderSwitchesDep,
 ) -> OrderOut:
     order = place_order(
-        PlaceOrder(user_id=body.user_id, item=body.item),
-        orders,
-        users,
-        switches,
+        PlaceOrderCommand(user_id=body.user_id, item=body.item),
+        order_repository,
+        user_directory,
+        order_switches,
     )
     return OrderOut(
         id=order.id, user_id=order.user_id, item=order.item, status=order.status
@@ -30,8 +34,17 @@ def post_order(
 
 
 @router.get("")
-def get_open_orders(user_id: int, orders: OrderRepositoryDep) -> list[OrderOut]:
+def get_orders(
+    user_id: int,
+    order_repository: OrderRepositoryDep,
+    status: OrderStatus | None = None,
+) -> list[OrderOut]:
     return [
-        OrderOut(id=o.id, user_id=o.user_id, item=o.item, status=o.status)
-        for o in orders.open_for_user(user_id)
+        OrderOut(
+            id=order.id,
+            user_id=order.user_id,
+            item=order.item,
+            status=order.status,
+        )
+        for order in order_repository.list_for_user(user_id, status)
     ]

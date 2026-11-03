@@ -5,16 +5,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.events.consumer import EventConsumer
-from app.core.events.messages import encode, event_name, to_payload
+from app.core.events.messages import encode, get_event_name, to_payload
 from app.core.events.models import ProcessedEventRow
 from app.core.outbox.models import OutboxRow
 from app.services.users import UserDeactivated
 
 
-def record(event, message_id="m1") -> dict:
+def create_record(event, message_id="m1") -> dict:
     return {
         "messageId": message_id,
-        "body": encode(event_name(type(event)), to_payload(event)),
+        "body": encode(get_event_name(type(event)), to_payload(event)),
     }
 
 
@@ -26,11 +26,11 @@ def consumer(engine, relay) -> EventConsumer:
 def test_handles_each_event_once(consumer):
     seen = []
     consumer.subscribe(
-        UserDeactivated, lambda event, uow: seen.append(event.user_id)
+        UserDeactivated, lambda event, unit_of_work: seen.append(event.user_id)
     )
     event = UserDeactivated(user_id=1)
     assert consumer.handle(
-        {"Records": [record(event, "m1"), record(event, "m2")]}
+        {"Records": [create_record(event, "m1"), create_record(event, "m2")]}
     ) == {"batchItemFailures": []}
     assert seen == [1]
 
@@ -38,48 +38,52 @@ def test_handles_each_event_once(consumer):
 def test_failing_handler_reports_the_message_and_can_retry(consumer):
     calls = []
 
-    def flaky(event, uow):
+    def flaky(event, unit_of_work):
         calls.append(event.user_id)
         if len(calls) == 1:
             raise RuntimeError("handler bug")
 
     consumer.subscribe(UserDeactivated, flaky)
     event = UserDeactivated(user_id=1)
-    assert consumer.handle({"Records": [record(event)]}) == {
+    assert consumer.handle({"Records": [create_record(event)]}) == {
         "batchItemFailures": [{"itemIdentifier": "m1"}]
     }
-    assert consumer.handle({"Records": [record(event)]}) == {
+    assert consumer.handle({"Records": [create_record(event)]}) == {
         "batchItemFailures": []
     }
     assert calls == [1, 1]
 
 
-def test_handlers_publish_through_their_own_outbox(consumer, engine, sender):
+def test_handlers_publish_through_their_own_outbox(
+    consumer, engine, message_sender
+):
     consumer.subscribe(
         UserDeactivated,
-        lambda event, uow: uow.events.publish(UserDeactivated(user_id=2)),
+        lambda event, unit_of_work: unit_of_work.event_publisher.publish(
+            UserDeactivated(user_id=2)
+        ),
     )
-    consumer.handle({"Records": [record(UserDeactivated(user_id=1))]})
+    consumer.handle({"Records": [create_record(UserDeactivated(user_id=1))]})
     with Session(engine) as session:
         assert [
             row.payload["user_id"] for row in session.scalars(select(OutboxRow))
         ] == [2]
-    assert len(sender.sent) == 1
+    assert len(message_sender.sent) == 1
 
 
 def test_unsubscribed_event_is_acknowledged(consumer):
     assert consumer.handle(
-        {"Records": [record(UserDeactivated(user_id=1))]}
+        {"Records": [create_record(UserDeactivated(user_id=1))]}
     ) == {"batchItemFailures": []}
 
 
 def test_purge_deletes_only_this_consumers_old_records(consumer, engine, relay):
-    consumer.subscribe(UserDeactivated, lambda event, uow: None)
+    consumer.subscribe(UserDeactivated, lambda event, unit_of_work: None)
     other = EventConsumer("billing", engine, relay)
-    other.subscribe(UserDeactivated, lambda event, uow: None)
+    other.subscribe(UserDeactivated, lambda event, unit_of_work: None)
     event = UserDeactivated(user_id=1)
-    consumer.handle({"Records": [record(event)]})
-    other.handle({"Records": [record(event)]})
+    consumer.handle({"Records": [create_record(event)]})
+    other.handle({"Records": [create_record(event)]})
 
     assert consumer.purge(datetime.now(UTC) - timedelta(days=1)) == 0
     assert consumer.purge(datetime.now(UTC) + timedelta(seconds=1)) == 1

@@ -16,7 +16,7 @@ related:
 One deployable app split into self-contained services, one per bounded context. Each service keeps its domain model free of framework code, and services talk through a public interface or domain events.
 
 ## Rules
-- **Domain is pure:** everything in `domain/` is plain dataclasses, exceptions, and `Protocol`s, with no FastAPI, ORM, or I/O. It imports only `shared/value_objects/`, `shared/events/`, and `shared/exceptions/`.
+- **Domain is pure:** everything in `domain/` is plain dataclasses, exceptions, and `Protocol`s, with no FastAPI, ORM, or I/O. It imports only `shared/value_objects/`, `shared/events/`, and `shared/errors/`.
 - **Use cases depend on `Protocol`s:** they import `domain/`, never `infrastructure/`.
 - **Infrastructure implements the domain:** it imports `domain/` to implement its `Protocol`s, never `use_cases/` or `api/`.
 - **Entry points wire it together:** `api/` (its `Depends()` providers) and `event_handlers/` build the repository implementations and pass them to the use cases. They are the only layers that import both `use_cases/` and `infrastructure/`.
@@ -69,7 +69,7 @@ A service has only the parts it uses: `users` is called by others and publishes 
 | `domain/`         | The service's business model, free of framework code.             |
 | `entities.py`     | Entities and the value objects only this service uses.            |
 | `events.py`       | Domain events: facts the service announces.                       |
-| `errors.py`       | Domain errors, subclassing `shared/exceptions/`.                  |
+| `errors.py`       | Domain errors, subclassing `shared/errors/`.                  |
 | `protocols.py`    | What the domain needs from outside: repositories, other services. |
 | `use_cases/`      | One application action per file; orchestrates the domain.         |
 | `infrastructure/` | ORM models and repository implementations.                        |

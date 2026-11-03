@@ -2,7 +2,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.services.orders.domain.entities import Order, OrderStatus
-from app.services.orders.domain.errors import OrderChanged
+from app.services.orders.domain.errors import OrderChangedError
 from app.services.orders.infrastructure.models import OrderRow
 
 
@@ -29,12 +29,13 @@ class SqlOrderRepository:
         order.id, order.version = row.id, row.version
         return order
 
-    def open_for_user(self, user_id: int) -> list[Order]:
-        rows = self._session.scalars(
-            select(OrderRow).where(
-                OrderRow.user_id == user_id, OrderRow.status == OrderStatus.OPEN
-            )
-        )
+    def list_for_user(
+        self, user_id: int, status: OrderStatus | None = None
+    ) -> list[Order]:
+        query = select(OrderRow).where(OrderRow.user_id == user_id)
+        if status is not None:
+            query = query.where(OrderRow.status == status)
+        rows = self._session.scalars(query)
         return [to_entity(row) for row in rows]
 
     def save(self, order: Order) -> None:
@@ -46,5 +47,5 @@ class SqlOrderRepository:
             )
         )
         if result.rowcount != 1:
-            raise OrderChanged(order.id)
+            raise OrderChangedError(order.id)
         order.version += 1

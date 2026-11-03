@@ -57,4 +57,4 @@ def add_iam_token(engine: Engine, db: DbSettings, auth: IamAuth) -> None:
         )
 ```
 
-`build_engine()` ([[settings-db]]) calls `add_iam_token()` when `db.auth` is an `IamAuth`, and passes it in already narrowed, so the listener reads `auth.region` without an `assert` (which `python -O` strips).
+`create_engine()` ([[settings-db]]) calls `add_iam_token()` when `db.auth` is an `IamAuth`, and passes it in already narrowed, so the listener reads `auth.region` without an `assert` (which `python -O` strips).

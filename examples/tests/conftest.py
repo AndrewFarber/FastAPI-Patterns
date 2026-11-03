@@ -37,7 +37,7 @@ TEST_VALUES: dict[str, dict[str, Any]] = {
 }
 
 
-def make_test_env() -> dict[str, str]:
+def create_test_env() -> dict[str, str]:
     return {
         f"{section}__{key}".upper(): json.dumps(value)
         if isinstance(value, (list, dict))
@@ -63,7 +63,7 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def test_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    for key, value in make_test_env().items():
+    for key, value in create_test_env().items():
         monkeypatch.setenv(key, value)
     get_settings.cache_clear()
     yield
@@ -96,6 +96,13 @@ def aws_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
+def ca_bundle(tmp_path):
+    path = tmp_path / "ca.pem"
+    path.write_text("")
+    return path
+
+
+@pytest.fixture
 def engine() -> Iterator[Engine]:
     tables = [
         UserRow.__table__,
@@ -114,7 +121,7 @@ def engine() -> Iterator[Engine]:
     engine.dispose()
 
 
-class RecordingSender:
+class FakeMessageSender:
     def __init__(self) -> None:
         self.sent: list[tuple[str, str]] = []
 
@@ -123,13 +130,13 @@ class RecordingSender:
 
 
 @pytest.fixture
-def sender() -> RecordingSender:
-    return RecordingSender()
+def message_sender() -> FakeMessageSender:
+    return FakeMessageSender()
 
 
 @pytest.fixture
-def relay(engine, sender) -> OutboxRelay:
-    return OutboxRelay(engine, sender)
+def relay(engine, message_sender) -> OutboxRelay:
+    return OutboxRelay(engine, message_sender)
 
 
 @pytest.fixture
@@ -148,7 +155,7 @@ def workers(test_env, restore_logging, aws, engine, monkeypatch):
     from app import workers
 
     monkeypatch.setattr(
-        workers, "build_engine", lambda db, application_name: engine
+        workers, "create_engine", lambda db, application_name: engine
     )
     return workers.create_workers()
 
@@ -183,18 +190,18 @@ def deliver(
     result = consumer.handle(
         {
             "Records": [
-                {"messageId": m["MessageId"], "body": m["Body"]}
-                for m in messages
+                {"messageId": message["MessageId"], "body": message["Body"]}
+                for message in messages
             ]
         }
     )
     failed = {
         failure["itemIdentifier"] for failure in result["batchItemFailures"]
     }
-    for m in messages:
-        if m["MessageId"] not in failed:
+    for message in messages:
+        if message["MessageId"] not in failed:
             sqs.delete_message(
-                QueueUrl=queue_url, ReceiptHandle=m["ReceiptHandle"]
+                QueueUrl=queue_url, ReceiptHandle=message["ReceiptHandle"]
             )
     return result
 
@@ -204,7 +211,7 @@ def client(create_app, aws, engine, monkeypatch) -> Iterator[TestClient]:
     from app import main
 
     monkeypatch.setattr(
-        main, "build_engine", lambda db, application_name: engine
+        main, "create_engine", lambda db, application_name: engine
     )
     with TestClient(create_app()) as client:
         yield client

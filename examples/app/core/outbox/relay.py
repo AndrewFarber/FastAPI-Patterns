@@ -18,10 +18,13 @@ class MessageSender(Protocol):
 
 class OutboxRelay:
     def __init__(
-        self, engine: Engine, sender: MessageSender, batch_size: int = 100
+        self,
+        engine: Engine,
+        message_sender: MessageSender,
+        batch_size: int = 100,
     ) -> None:
         self._engine = engine
-        self._sender = sender
+        self._message_sender = message_sender
         self._batch_size = batch_size
 
     def relay(self, event_ids: list[UUID]) -> None:
@@ -51,7 +54,7 @@ class OutboxRelay:
         with Session(self._engine) as session, session.begin():
             for row in session.scalars(query).all():
                 try:
-                    self._sender.send(
+                    self._message_sender.send(
                         row.event_type, encode(row.event_type, row.payload)
                     )
                 except Exception:

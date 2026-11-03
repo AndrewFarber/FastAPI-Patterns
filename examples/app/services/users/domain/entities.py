@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from enum import StrEnum
 
-from app.services.users.domain.errors import UserAlreadyDeactivated
+from app.services.users.domain.errors import UserAlreadyDeactivatedError
 
 
 class UserStatus(StrEnum):
@@ -21,5 +21,5 @@ class User:
 
     def deactivate(self) -> None:
         if not self.is_active():
-            raise UserAlreadyDeactivated(self.id)
+            raise UserAlreadyDeactivatedError(self.id)
         self.status = UserStatus.DEACTIVATED

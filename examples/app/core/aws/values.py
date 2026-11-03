@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 import boto3
 from botocore.config import Config
 
@@ -10,7 +12,7 @@ CLIENT_CONFIG = Config(
 )
 
 
-def secrets_manager_cache(region: str, ttl_seconds: float) -> TtlCache:
+def create_secrets_manager_cache(region: str, ttl: timedelta) -> TtlCache:
     client = boto3.client(
         "secretsmanager", region_name=region, config=CLIENT_CONFIG
     )
@@ -18,15 +20,15 @@ def secrets_manager_cache(region: str, ttl_seconds: float) -> TtlCache:
         lambda secret_id: client.get_secret_value(SecretId=secret_id)[
             "SecretString"
         ],
-        ttl_seconds,
+        ttl,
     )
 
 
-def parameter_store_cache(region: str, ttl_seconds: float) -> TtlCache:
+def create_parameter_store_cache(region: str, ttl: timedelta) -> TtlCache:
     client = boto3.client("ssm", region_name=region, config=CLIENT_CONFIG)
     return TtlCache(
         lambda name: client.get_parameter(Name=name, WithDecryption=True)[
             "Parameter"
         ]["Value"],
-        ttl_seconds,
+        ttl,
     )

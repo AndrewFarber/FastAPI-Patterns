@@ -1,6 +1,7 @@
 import logging
 import time
 from collections.abc import Callable
+from datetime import timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -9,12 +10,12 @@ class TtlCache:
     def __init__(
         self,
         fetch: Callable[[str], str],
-        ttl_seconds: float,
-        retry_seconds: float = 30,
+        ttl: timedelta,
+        retry: timedelta = timedelta(seconds=30),
     ) -> None:
         self._fetch = fetch
-        self._ttl = ttl_seconds
-        self._retry = min(retry_seconds, ttl_seconds)
+        self._ttl = ttl.total_seconds()
+        self._retry = min(retry, ttl).total_seconds()
         self._values: dict[str, tuple[float, str]] = {}
 
     def get(self, key: str) -> str:

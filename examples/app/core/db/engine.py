@@ -1,12 +1,13 @@
-from sqlalchemy import URL, Engine, create_engine
+import sqlalchemy as sa
+from sqlalchemy import URL, Engine
 
 from app.core.config.db import DbSettings, PasswordAuth
 from app.core.config.db_iam import IamAuth
 from app.core.db.iam_auth import add_iam_token
 
 
-def build_engine(db: DbSettings, application_name: str) -> Engine:
-    engine = create_engine(
+def create_engine(db: DbSettings, application_name: str) -> Engine:
+    engine = sa.create_engine(
         _url(db),
         pool_size=db.pool_size,
         max_overflow=db.max_overflow,
@@ -14,14 +15,16 @@ def build_engine(db: DbSettings, application_name: str) -> Engine:
         pool_recycle=db.pool_recycle_seconds,
         pool_pre_ping=True,
         echo=db.echo,
-        connect_args=connect_args(db, application_name),
+        connect_args=get_connect_args(db, application_name),
     )
     if isinstance(db.auth, IamAuth):
         add_iam_token(engine, db, db.auth)
     return engine
 
 
-def connect_args(db: DbSettings, application_name: str) -> dict[str, str | int]:
+def get_connect_args(
+    db: DbSettings, application_name: str
+) -> dict[str, str | int]:
     args: dict[str, str | int] = {
         "sslmode": db.sslmode,
         "connect_timeout": db.connect_timeout_seconds,

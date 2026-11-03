@@ -8,7 +8,7 @@ from app.core.db.base import Base
 
 
 class ProcessedEventRow(Base):
-    __tablename__ = "processed"
+    __tablename__ = "processed_events"
     __table_args__ = {"schema": "events"}
 
     event_id: Mapped[UUID] = mapped_column(primary_key=True)

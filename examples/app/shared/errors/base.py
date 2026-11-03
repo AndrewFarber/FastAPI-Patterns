@@ -6,7 +6,7 @@ class NotFoundError(DomainError):
     pass
 
 
-class RuleViolation(DomainError):
+class RuleViolationError(DomainError):
     pass
 
 
